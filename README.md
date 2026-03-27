@@ -131,6 +131,8 @@ python main.py set-progress --level 9 --difficulty 10
 - `--level N` jumps to the exact roadmap level from 1 through 10
 - `--difficulty N` optionally overrides the default testing difficulty for that jump
 
+If you want to replay an already-completed level without changing stored progress, open the browser app, go to `/progress`, and use the `Redo level` button next to any level up to your current position. That launches a practice replay and leaves the learner's saved mastery and current roadmap position unchanged after submission.
+
 ## Web UI
 Stage 6 introduces a browser-based learner loop aligned to the MVP requirements in [spec.md](C:/Users/jarec/Dropbox/Python/LuminaRomana/spec.md).
 
@@ -157,6 +159,7 @@ Current browser flow:
 - Topic progression gated by at least five completed question sets, 80 percent or higher on the current set, and an 80 percent or higher average across all sets for the current topic
 - Initial B1-capable sessions with multi-sentence examples, sentence transformation tasks, and dialogue completion tasks when the learner reaches Levels 7 to 8
 - Initial B2-capable sessions with reading comprehension, guided writing, rubric display, and paragraph-style prompts when the learner reaches Levels 9 to 10
+- A `Redo level` action on the progress screen so completed levels can be replayed for testing without changing stored mastery or the learner's current roadmap position
 
 The web layer is intentionally thin and reuses the existing persistence, roadmap, difficulty, AI, and validation services instead of duplicating business logic.
 
