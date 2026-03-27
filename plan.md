@@ -258,13 +258,13 @@ Implementation guidance:
 
 Implementation notes:
 - Added `app/services/learning.py` with a `LearningService` that:
-  creates a default learner profile on demand, resumes unfinished lessons, requests the next lesson or review session from the existing AI-plus-fallback layer, scores quiz submissions, persists quiz attempts, updates mastery and difficulty, and exposes dashboard-ready progress data
+  creates a default learner profile on demand, supports CLI reset of that profile for testing, resumes unfinished lessons, inserts a level-introduction step before each new roadmap topic, requests the next lesson or review session from the existing AI-plus-fallback layer, scores quiz submissions, persists quiz attempts, updates mastery and difficulty, and exposes dashboard-ready progress data
 - Added a server-rendered WSGI interface in `app/ui/web.py` with browser routes for:
-  dashboard, lesson delivery, quiz submission, answer explanations, and learner progress
+  dashboard, level introductions, lesson delivery, quiz submission, answer explanations, and learner progress
 - Kept the web layer thin by reusing:
   `ContentLibrary` for roadmap state, `DifficultyManager` for adaptive and review decisions, `AIService` for validated lesson generation, and the SQLite repositories for persistence
 - Extended configuration with `LUMINA_ROMANA_WEB_HOST` and `LUMINA_ROMANA_WEB_PORT`
-- Updated the CLI so `lumina-romana serve` starts the browser-based learner interface while the default CLI mode remains a development and diagnostics summary
+- Updated the CLI so `status`, `serve`, and `reset-progress` are available for development and testing workflows
 - Added Stage 6 coverage in:
   `tests/test_learning.py`
   `tests/test_web.py`
@@ -275,6 +275,8 @@ Implementation notes:
 Notes:
 - The MVP loop currently uses the existing default learner profile and server-rendered HTML rather than a multi-user auth system or a JavaScript-heavy frontend
 - Lesson generation remains guarded by the Stage 5 validation and fallback path, so beginner topics still function when AI is disabled or generation fails
+- Topic progression now requires at least five completed question sets for a level, plus both an 80 percent current-page score and an 80 percent running average for that level
+- Pre-lesson pages now explain underlying Romanian grammar principles such as suffix articles like `-ul` and case-related forms such as `lui`, and wrong answers now include explicit reasons rather than only the correct-answer explanation
 
 ## Stage 7: B1 Expansion
 Objective: extend beyond beginner grammar into connected communication and narrative use.
@@ -361,7 +363,7 @@ Validation is placed before heavy AI reliance on purpose. Without that sequencin
 - Milestone 5: packaging and deployment readiness
 
 ## Immediate Next Steps
-1. Deliver Stage 6 with a web-based GUI that shows lessons, tests, explanations, learner progress, and current CEFR competence band.
-2. Extend the AI layer to support lesson orchestration flows on top of the new validation and fallback gate.
-3. Add end-to-end generation tests that cover bootstrap, provider calls, validation, fallback behavior, and persistence together.
-4. Expand curated fallback coverage if B1-B2 offline or provider-disabled operation becomes a product requirement.
+1. Extend the AI layer to generate more descriptive learner-facing grammar explanations for later roadmap stages with the same validation discipline now used for lesson content.
+2. Add end-to-end generation tests that cover bootstrap, provider calls, validation, fallback behavior, multi-set progression gating, and persistence together.
+3. Expand curated fallback coverage if B1-B2 offline or provider-disabled operation becomes a product requirement.
+4. Add richer administrative CLI tooling if multi-user local testing or content-inspection workflows become necessary.

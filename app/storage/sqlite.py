@@ -242,6 +242,10 @@ class SQLiteUserProgressRepository:
                 ],
             )
 
+    def delete(self, user_id: str) -> None:
+        with self.storage.connection() as conn:
+            conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
+
 
 @dataclass(slots=True)
 class SQLiteLessonRepository:
@@ -291,7 +295,7 @@ class SQLiteLessonRepository:
                 SELECT payload
                 FROM lesson_history
                 WHERE user_id = ?
-                ORDER BY datetime(created_at) DESC
+                ORDER BY created_at DESC
                 LIMIT ?
                 """,
                 (user_id, limit),
@@ -335,7 +339,7 @@ class SQLiteQuizAttemptRepository:
                 SELECT *
                 FROM quiz_attempts
                 WHERE user_id = ?
-                ORDER BY datetime(created_at) DESC
+                ORDER BY created_at DESC
                 LIMIT ?
                 """,
                 (user_id, limit),

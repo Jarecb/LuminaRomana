@@ -80,24 +80,38 @@ pip install -e ".[dev]"
 If you want to use AI generation, you only need to provide environment configuration. No additional SDK install is required for the current implementation.
 
 ## Run
-Available run commands:
+The CLI currently supports these commands.
+
+From a local checkout, the most reliable form is:
 
 ```powershell
 python main.py
-python -m app
-lumina-romana
-lumina-romana serve
+python main.py status
+python main.py serve
+python main.py reset-progress
 ```
 
-Expected current behavior:
-- Loads base configuration from environment variables
-- Configures application logging
-- Initializes the local SQLite database
-- Loads seeded roadmap metadata
-- Builds the adaptive difficulty and AI service layers
-- Builds the validation and fallback content layer
-- Builds the learning-orchestration service and web app
-- Prints a developer status summary including AI provider status and the web UI address
+If you installed the package with `pip install -e .`, the same commands are also available as:
+
+```powershell
+lumina-romana
+lumina-romana status
+lumina-romana serve
+lumina-romana reset-progress
+```
+
+Command summary:
+- `status`: loads configuration, initializes the database and services, and prints the current runtime summary. This is also the default command when no subcommand is given.
+- `serve`: starts the local web server for the browser-based learner interface.
+- `reset-progress`: clears the default learner's saved progress and recreates a fresh Level 1 / A1 / difficulty 1 state for testing.
+
+Examples:
+
+```powershell
+python main.py status
+python main.py serve
+python main.py reset-progress
+```
 
 ## Web UI
 Stage 6 introduces a browser-based learner loop aligned to the MVP requirements in [spec.md](C:/Users/jarec/Dropbox/Python/LuminaRomana/spec.md).
@@ -105,7 +119,7 @@ Stage 6 introduces a browser-based learner loop aligned to the MVP requirements 
 Start the web interface with:
 
 ```powershell
-lumina-romana serve
+python main.py serve
 ```
 
 Default local address:
@@ -115,12 +129,14 @@ http://127.0.0.1:8000
 ```
 
 Current browser flow:
-- Dashboard with current CEFR estimate, recommended action, recent lessons, recent quiz scores, and roadmap progress
-- Lesson page with explanation text, worked examples, key rules, and an interactive quiz form
-- Result page with per-question answer explanations after quiz submission
-- Progress page with current level, difficulty, XP, recent scores, and mastery summary
+- Dashboard with current CEFR estimate, recommended action, recent lessons, recent quiz scores, roadmap progress, and the current level-average summary
+- Level introduction page before each new roadmap topic, with descriptive explanations of the grammar principles being taught
+- Lesson page with explanation text, worked examples, key rules, and an interactive question-set form
+- Result page with per-question answer explanations, explicit wrong-answer explanations, and the running level average after submission
+- Progress page with current level, difficulty, XP, recent scores, mastery summary, and current topic-average information
 - Automatic resume of an unfinished lesson
 - Review-session generation after scores below 60 percent
+- Topic progression gated by at least five completed question sets, 80 percent or higher on the current set, and an 80 percent or higher average across all sets for the current topic
 
 The web layer is intentionally thin and reuses the existing persistence, roadmap, difficulty, AI, and validation services instead of duplicating business logic.
 
@@ -234,6 +250,6 @@ This repository now has:
 - Stage 4 AI integration through `app.ai.AIService`, provider-backed JSON generation requests, prompt builders, transient retry handling, and metadata logging without secrets
 - Stage 5 validation through `app.validation.ContentValidator`, including schema-like checks, scope enforcement, answer consistency checks, and sensibility filtering
 - Stage 5 fallback lesson generation in `ContentLibrary` for the core A1-A2 roadmap topics when validated AI output is unavailable
-- Stage 6 learner-session orchestration in `app.services.learning`, including lesson resume, quiz scoring, progress updates, mastery advancement, and review-session routing
-- Stage 6 browser-facing lesson, quiz, explanation, and progress screens in `app.ui.web`
+- Stage 6 learner-session orchestration in `app.services.learning`, including level introductions, lesson resume, multi-set topic scoring, progress updates, mastery advancement, review-session routing, and CLI reset support
+- Stage 6 browser-facing lesson, level-intro, quiz, explanation, and progress screens in `app.ui.web`
 - Stage 6 integration tests covering the browser flow and persistence-backed progress updates
