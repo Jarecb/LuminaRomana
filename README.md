@@ -1,8 +1,8 @@
 # Lumina Romana
 
-Lumina Romana is a Python application for learning Romanian through adaptive grammar lessons and validated AI-generated quizzes. The project combines a structured Romanian learning roadmap with AI-assisted content generation, local user progress tracking, deterministic difficulty scaling based on quiz performance, a provider-backed AI integration layer, and a validation-plus-fallback safety gate in front of learner-facing content.
+Lumina Romana is a Python application for learning Romanian through adaptive grammar lessons and validated AI-generated quizzes. The project combines a structured Romanian learning roadmap with AI-assisted content generation, local user progress tracking, deterministic difficulty scaling based on quiz performance, a provider-backed AI integration layer, a validation-plus-fallback safety gate in front of learner-facing content, and a browser-based Stage 6 MVP learning loop.
 
-The repository currently includes the Stage 0 foundation, Stage 1 persistence work, Stage 2 curriculum engine, Stage 3 adaptive difficulty engine, Stage 4 AI integration layer, and Stage 5 validation and fallback content. The full product direction is defined in [spec.md](C:/Users/jarec/Dropbox/Python/LuminaRomana/spec.md), and the staged implementation roadmap is defined in [plan.md](C:/Users/jarec/Dropbox/Python/LuminaRomana/plan.md).
+The repository currently includes the Stage 0 foundation, Stage 1 persistence work, Stage 2 curriculum engine, Stage 3 adaptive difficulty engine, Stage 4 AI integration layer, Stage 5 validation and fallback content, and Stage 6 MVP lesson delivery in a web UI. The full product direction is defined in [spec.md](C:/Users/jarec/Dropbox/Python/LuminaRomana/spec.md), and the staged implementation roadmap is defined in [plan.md](C:/Users/jarec/Dropbox/Python/LuminaRomana/plan.md).
 
 ## Index
 - [Project Intent](#project-intent)
@@ -12,6 +12,7 @@ The repository currently includes the Stage 0 foundation, Stage 1 persistence wo
 - [Build](#build)
 - [AI Installation](#ai-installation)
 - [Run](#run)
+- [Web UI](#web-ui)
 - [Test](#test)
 - [Deploy](#deploy)
 - [Configuration](#configuration)
@@ -34,6 +35,7 @@ The repository currently includes the Stage 0 foundation, Stage 1 persistence wo
 - Seeded roadmap metadata and curriculum selection from A1 through B2
 - Provider-agnostic AI integration with prompt builders, retry handling, and an OpenAI-compatible provider implementation
 - Deterministic lesson validation, scope checking, and fallback lesson generation for core A1-A2 topics
+- A server-rendered WSGI web interface for lesson delivery, quizzes, answer explanations, and progress tracking
 - Automated testing with `pytest`
 
 ## Repository Layout
@@ -84,6 +86,7 @@ Available run commands:
 python main.py
 python -m app
 lumina-romana
+lumina-romana serve
 ```
 
 Expected current behavior:
@@ -93,7 +96,33 @@ Expected current behavior:
 - Loads seeded roadmap metadata
 - Builds the adaptive difficulty and AI service layers
 - Builds the validation and fallback content layer
-- Prints a startup summary including AI provider status
+- Builds the learning-orchestration service and web app
+- Prints a developer status summary including AI provider status and the web UI address
+
+## Web UI
+Stage 6 introduces a browser-based learner loop aligned to the MVP requirements in [spec.md](C:/Users/jarec/Dropbox/Python/LuminaRomana/spec.md).
+
+Start the web interface with:
+
+```powershell
+lumina-romana serve
+```
+
+Default local address:
+
+```text
+http://127.0.0.1:8000
+```
+
+Current browser flow:
+- Dashboard with current CEFR estimate, recommended action, recent lessons, recent quiz scores, and roadmap progress
+- Lesson page with explanation text, worked examples, key rules, and an interactive quiz form
+- Result page with per-question answer explanations after quiz submission
+- Progress page with current level, difficulty, XP, recent scores, and mastery summary
+- Automatic resume of an unfinished lesson
+- Review-session generation after scores below 60 percent
+
+The web layer is intentionally thin and reuses the existing persistence, roadmap, difficulty, AI, and validation services instead of duplicating business logic.
 
 ## Test
 Run the current test suite with:
@@ -125,6 +154,8 @@ The scaffold supports these environment variables:
 - `LUMINA_ROMANA_AI_BASE_URL`
 - `LUMINA_ROMANA_AI_TIMEOUT_SECONDS`
 - `LUMINA_ROMANA_AI_MAX_RETRIES`
+- `LUMINA_ROMANA_WEB_HOST`
+- `LUMINA_ROMANA_WEB_PORT`
 
 By default the app starts with AI disabled unless a key is configured. The current provider implementation targets the OpenAI chat completions API.
 
@@ -203,5 +234,6 @@ This repository now has:
 - Stage 4 AI integration through `app.ai.AIService`, provider-backed JSON generation requests, prompt builders, transient retry handling, and metadata logging without secrets
 - Stage 5 validation through `app.validation.ContentValidator`, including schema-like checks, scope enforcement, answer consistency checks, and sensibility filtering
 - Stage 5 fallback lesson generation in `ContentLibrary` for the core A1-A2 roadmap topics when validated AI output is unavailable
-
-Stage 6 and the learner-facing lesson loop remain for later stages.
+- Stage 6 learner-session orchestration in `app.services.learning`, including lesson resume, quiz scoring, progress updates, mastery advancement, and review-session routing
+- Stage 6 browser-facing lesson, quiz, explanation, and progress screens in `app.ui.web`
+- Stage 6 integration tests covering the browser flow and persistence-backed progress updates

@@ -28,6 +28,12 @@ class AISettings:
 
 
 @dataclass(slots=True)
+class WebSettings:
+    host: str = "127.0.0.1"
+    port: int = 8000
+
+
+@dataclass(slots=True)
 class Settings:
     app_name: str = "Lumina Romana"
     environment: str = "development"
@@ -35,6 +41,7 @@ class Settings:
     data_dir: Path = Path("data")
     database_path: Path = Path("data/lumina_romana.db")
     ai: AISettings = field(default_factory=AISettings)
+    web: WebSettings = field(default_factory=WebSettings)
 
     @classmethod
     def load(cls) -> "Settings":
@@ -56,5 +63,9 @@ class Settings:
                 base_url=os.getenv("LUMINA_ROMANA_AI_BASE_URL", "https://api.openai.com/v1").rstrip("/"),
                 timeout_seconds=float(os.getenv("LUMINA_ROMANA_AI_TIMEOUT_SECONDS", "30")),
                 max_retries=max(0, int(os.getenv("LUMINA_ROMANA_AI_MAX_RETRIES", "2"))),
+            ),
+            web=WebSettings(
+                host=os.getenv("LUMINA_ROMANA_WEB_HOST", "127.0.0.1"),
+                port=int(os.getenv("LUMINA_ROMANA_WEB_PORT", "8000")),
             ),
         )

@@ -7,6 +7,7 @@ from app.ai import AIService, DisabledAIProvider, OpenAIChatProvider, PromptBuil
 from app.config import Settings
 from app.logging_config import configure_logging
 from app.services import ContentLibrary, DifficultyManager
+from app.services.learning import LearningService
 from app.storage import (
     SQLiteLessonRepository,
     SQLiteQuizAttemptRepository,
@@ -32,6 +33,7 @@ class Application:
     content_library: ContentLibrary
     difficulty_manager: DifficultyManager
     ai_service: AIService
+    learning_service: LearningService
 
 
 def create_application() -> Application:
@@ -64,13 +66,7 @@ def create_application() -> Application:
         )
     else:
         raise ValueError(f"Unsupported AI provider '{ai_settings.provider}'.")
-    return Application(
-        settings=settings,
-        logger=logger,
-        persistence=persistence,
-        content_library=content_library,
-        difficulty_manager=difficulty_manager,
-        ai_service=AIService(
+    ai_service = AIService(
             provider=provider,
             prompt_builder=PromptBuilder(),
             content_library=content_library,
@@ -78,5 +74,21 @@ def create_application() -> Application:
             content_validator=ContentValidator(),
             logger=logger.getChild("ai"),
             max_retries=ai_settings.max_retries,
-        ),
+        )
+    learning_service = LearningService(
+        user_progress_repository=persistence.user_progress,
+        lesson_repository=persistence.lessons,
+        quiz_attempt_repository=persistence.quiz_attempts,
+        content_library=content_library,
+        difficulty_manager=difficulty_manager,
+        ai_service=ai_service,
+    )
+    return Application(
+        settings=settings,
+        logger=logger,
+        persistence=persistence,
+        content_library=content_library,
+        difficulty_manager=difficulty_manager,
+        ai_service=ai_service,
+        learning_service=learning_service,
     )

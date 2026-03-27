@@ -13,6 +13,8 @@ def test_settings_load_from_environment(monkeypatch):
     monkeypatch.setenv("LUMINA_ROMANA_AI_BASE_URL", "https://example.test/v1/")
     monkeypatch.setenv("LUMINA_ROMANA_AI_TIMEOUT_SECONDS", "12.5")
     monkeypatch.setenv("LUMINA_ROMANA_AI_MAX_RETRIES", "4")
+    monkeypatch.setenv("LUMINA_ROMANA_WEB_HOST", "0.0.0.0")
+    monkeypatch.setenv("LUMINA_ROMANA_WEB_PORT", "9001")
     monkeypatch.delenv("LUMINA_ROMANA_DB_PATH", raising=False)
 
     settings = Settings.load()
@@ -29,6 +31,8 @@ def test_settings_load_from_environment(monkeypatch):
     assert settings.ai.timeout_seconds == 12.5
     assert settings.ai.max_retries == 4
     assert settings.ai.configured is True
+    assert settings.web.host == "0.0.0.0"
+    assert settings.web.port == 9001
 
 
 def test_create_application_uses_loaded_settings(monkeypatch, tmp_path):
@@ -44,3 +48,4 @@ def test_create_application_uses_loaded_settings(monkeypatch, tmp_path):
     assert len(app.content_library.all_topics()) == 10
     assert app.ai_service.is_configured is False
     assert app.ai_service.provider.provider_name == "disabled"
+    assert app.learning_service is not None

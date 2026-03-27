@@ -233,6 +233,8 @@ Notes:
 - Unsupported fallback topics still surface generation failures explicitly, which keeps later B1-B2 lesson safety dependent on validated AI output until curated fallbacks are added
 
 ## Stage 6: MVP Learning Loop
+Status: completed on 2026-03-27.
+
 Objective: deliver an end-to-end A1-A2 product loop with a web-based learner interface.
 
 Deliverables:
@@ -253,6 +255,26 @@ Implementation guidance:
 - Reuse the existing domain, storage, and curriculum services rather than duplicating logic in the UI layer
 - Prefer a thin web layer that renders learner-facing views from application services and persistence-backed state
 - Include integration tests for browser-facing lesson, quiz, explanation, and progress pages
+
+Implementation notes:
+- Added `app/services/learning.py` with a `LearningService` that:
+  creates a default learner profile on demand, resumes unfinished lessons, requests the next lesson or review session from the existing AI-plus-fallback layer, scores quiz submissions, persists quiz attempts, updates mastery and difficulty, and exposes dashboard-ready progress data
+- Added a server-rendered WSGI interface in `app/ui/web.py` with browser routes for:
+  dashboard, lesson delivery, quiz submission, answer explanations, and learner progress
+- Kept the web layer thin by reusing:
+  `ContentLibrary` for roadmap state, `DifficultyManager` for adaptive and review decisions, `AIService` for validated lesson generation, and the SQLite repositories for persistence
+- Extended configuration with `LUMINA_ROMANA_WEB_HOST` and `LUMINA_ROMANA_WEB_PORT`
+- Updated the CLI so `lumina-romana serve` starts the browser-based learner interface while the default CLI mode remains a development and diagnostics summary
+- Added Stage 6 coverage in:
+  `tests/test_learning.py`
+  `tests/test_web.py`
+  plus CLI and config updates in existing test modules
+- Verified Stage 6 locally with:
+  `.\.venv\Scripts\python.exe -m pytest`
+
+Notes:
+- The MVP loop currently uses the existing default learner profile and server-rendered HTML rather than a multi-user auth system or a JavaScript-heavy frontend
+- Lesson generation remains guarded by the Stage 5 validation and fallback path, so beginner topics still function when AI is disabled or generation fails
 
 ## Stage 7: B1 Expansion
 Objective: extend beyond beginner grammar into connected communication and narrative use.
