@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from dataclasses import replace
 import json
 import logging
@@ -17,6 +18,18 @@ from app.ai.types import (
 from app.services.difficulty import DifficultyManager
 from app.services.roadmap import ContentLibrary
 from app.validation import ContentValidationError, ContentValidator, lesson_to_payload
+
+
+@dataclass(frozen=True, slots=True)
+class AIServiceMetricsSnapshot:
+    total_requests: int
+    successful_generations: int
+    fallback_generations: int
+    validation_failures: int
+    retries_attempted: int
+    transient_failures: int
+    provider_failures: int
+    json_parse_failures: int
 
 
 class AIService:
@@ -37,15 +50,29 @@ class AIService:
         self.content_validator = content_validator
         self.logger = logger
         self.max_retries = max(0, max_retries)
+        self._metrics = {
+            "total_requests": 0,
+            "successful_generations": 0,
+            "fallback_generations": 0,
+            "validation_failures": 0,
+            "retries_attempted": 0,
+            "transient_failures": 0,
+            "provider_failures": 0,
+            "json_parse_failures": 0,
+        }
 
     @property
     def is_configured(self) -> bool:
         return self.provider.is_configured
 
+    def metrics_snapshot(self) -> AIServiceMetricsSnapshot:
+        return AIServiceMetricsSnapshot(**self._metrics)
+
     def generate_lesson(self, request: LessonGenerationRequest) -> LessonGenerationResult:
         topic = self.content_library.get_topic(request.topic_id)
         if topic is None:
             raise ValueError(f"Unknown topic '{request.topic_id}'.")
+        self._metrics["total_requests"] += 1
 
         assessment = self.difficulty_manager.assess_user(request.user_progress)
         constraints = self.difficulty_manager.build_prompt_constraints(
@@ -93,6 +120,7 @@ class AIService:
                     response.prompt_tokens,
                     response.completion_tokens,
                 )
+                self._metrics["successful_generations"] += 1
                 return LessonGenerationResult(
                     lesson=lesson,
                     lesson_payload=lesson_to_payload(lesson),
@@ -107,6 +135,8 @@ class AIService:
                 )
             except TransientAIError as exc:
                 last_error = exc
+                self._metrics["transient_failures"] += 1
+                self._metrics["retries_attempted"] += 1
                 self.logger.warning(
                     "AI transient failure provider=%s model=%s attempt=%s topic=%s error=%s",
                     self.provider.provider_name,
@@ -118,6 +148,8 @@ class AIService:
                 failure_reasons.append(str(exc))
             except ContentValidationError as exc:
                 last_error = exc
+                self._metrics["validation_failures"] += 1
+                self._metrics["retries_attempted"] += 1
                 feedback = tuple(issue.message for issue in exc.issues[:5])
                 self.logger.warning(
                     "AI content validation failed provider=%s model=%s attempt=%s topic=%s issues=%s",
@@ -135,6 +167,7 @@ class AIService:
                 )
             except AIConfigurationError as exc:
                 last_error = exc
+                self._metrics["provider_failures"] += 1
                 self.logger.warning(
                     "AI is not configured for topic=%s error=%s",
                     request.topic_id,
@@ -144,6 +177,8 @@ class AIService:
                 break
             except json.JSONDecodeError as exc:
                 last_error = exc
+                self._metrics["json_parse_failures"] += 1
+                self._metrics["retries_attempted"] += 1
                 self.logger.error(
                     "AI response parsing failed provider=%s model=%s topic=%s attempt=%s error=%s",
                     self.provider.provider_name,
@@ -160,6 +195,8 @@ class AIService:
                 )
             except AIProviderError as exc:
                 last_error = exc
+                self._metrics["provider_failures"] += 1
+                self._metrics["retries_attempted"] += 1
                 self.logger.exception(
                     "AI provider failure provider=%s model=%s topic=%s attempt=%s",
                     self.provider.provider_name,
@@ -188,6 +225,7 @@ class AIService:
                 attempts_used,
                 " | ".join(failure_reasons[:5]) or "fallback requested",
             )
+            self._metrics["fallback_generations"] += 1
             return LessonGenerationResult(
                 lesson=fallback_lesson,
                 lesson_payload=lesson_to_payload(fallback_lesson),
