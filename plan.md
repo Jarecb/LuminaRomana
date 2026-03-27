@@ -316,6 +316,8 @@ Notes:
 - Integrated mastery tracking is now reflected through `skill_scores`, especially `grammar` and `integrated_grammar`, so later-stage adaptation has a stable signal for connected grammar performance
 
 ## Stage 8: B2 Learning Features
+Status: completed on 2026-03-27.
+
 Objective: support upper-intermediate learning rather than only sentence-level drills.
 
 Deliverables:
@@ -330,6 +332,31 @@ Exit criteria:
 - The system can generate and validate B2-target lessons
 - The learner can complete integrated comprehension and writing tasks
 - B2 progression depends on sustained mastery, not isolated quiz spikes
+
+Implementation notes:
+- Extended `ContentLibrary` fallback coverage and vocabulary constraints to include both B2 roadmap topics:
+  `b2_core_structures` and `b2_consolidation`
+- Added B2-safe deterministic lesson templates with:
+  passage-based reading comprehension, guided writing prompts with rubrics, discourse-marker tasks, reported-speech work, and integrated error-correction or justification tasks
+- Updated prompt construction in `app/ai/prompts.py` so B2 generation requests explicitly require:
+  at least one `reading_comprehension` item, at least one `guided_writing` item, rubric criteria, and paragraph-level coherence
+- Extended `ContentValidator` with Stage 8 quality gates for:
+  B2 integrated-task minimum counts, passage-length reading prompts, and rubric requirements for guided writing
+- Extended the web GUI in `app/ui/web.py` to present integrated B2 workflows more clearly through:
+  textarea responses for guided writing, rubric display, blockquote-style passage formatting, task-type labels, and visible skill signals on the progress page
+- Reused the existing Stage 7 skill-tracking path so B2 question sets now update:
+  `grammar`, `integrated_grammar`, `reading`, and `writing` signals
+- Confirmed placement evaluation now classifies through B2 in the test suite
+- Added Stage 8 coverage in:
+  `tests/test_ai.py`
+  `tests/test_learning.py`
+  `tests/test_roadmap.py`
+  `tests/test_validation.py`
+  `tests/test_web.py`
+
+Notes:
+- Stage 8 adds deterministic B2 task support and browser presentation for integrated reading and writing, but open-response scoring is still reference-answer based rather than AI-assisted rubric scoring
+- The existing multi-set mastery and prerequisite gating model continues to prevent B2 progression from single-score spikes, while the web UI now surfaces the related skill signals more clearly
 
 ## Stage 9: Quality Hardening
 Objective: reduce regressions and improve trustworthiness before wider use.

@@ -1,8 +1,8 @@
 # Lumina Romana
 
-Lumina Romana is a Python application for learning Romanian through adaptive grammar lessons and validated AI-generated quizzes. The project combines a structured Romanian learning roadmap with AI-assisted content generation, local user progress tracking, deterministic difficulty scaling based on quiz performance, a provider-backed AI integration layer, a validation-plus-fallback safety gate in front of learner-facing content, and a browser-based Stage 7 learning loop with initial B1 support.
+Lumina Romana is a Python application for learning Romanian through adaptive grammar lessons and validated AI-generated quizzes. The project combines a structured Romanian learning roadmap with AI-assisted content generation, local user progress tracking, deterministic difficulty scaling based on quiz performance, a provider-backed AI integration layer, a validation-plus-fallback safety gate in front of learner-facing content, and a browser-based Stage 8 learning loop with initial B2 support.
 
-The repository currently includes the Stage 0 foundation, Stage 1 persistence work, Stage 2 curriculum engine, Stage 3 adaptive difficulty engine, Stage 4 AI integration layer, Stage 5 validation and fallback content, Stage 6 MVP lesson delivery in a web UI, and Stage 7 B1 expansion. The full product direction is defined in [spec.md](C:/Users/jarec/Dropbox/Python/LuminaRomana/spec.md), and the staged implementation roadmap is defined in [plan.md](C:/Users/jarec/Dropbox/Python/LuminaRomana/plan.md).
+The repository currently includes the Stage 0 foundation, Stage 1 persistence work, Stage 2 curriculum engine, Stage 3 adaptive difficulty engine, Stage 4 AI integration layer, Stage 5 validation and fallback content, Stage 6 MVP lesson delivery in a web UI, Stage 7 B1 expansion, and Stage 8 B2 learning features. The full product direction is defined in [spec.md](C:/Users/jarec/Dropbox/Python/LuminaRomana/spec.md), and the staged implementation roadmap is defined in [plan.md](C:/Users/jarec/Dropbox/Python/LuminaRomana/plan.md).
 
 ## Index
 - [Project Intent](#project-intent)
@@ -34,7 +34,7 @@ The repository currently includes the Stage 0 foundation, Stage 1 persistence wo
 - Dataclass-based domain models for learner progress, lessons, questions, and quiz attempts
 - Seeded roadmap metadata and curriculum selection from A1 through B2
 - Provider-agnostic AI integration with prompt builders, retry handling, and an OpenAI-compatible provider implementation
-- Deterministic lesson validation, scope checking, and fallback lesson generation for core A1-A2 plus initial B1 topics
+- Deterministic lesson validation, scope checking, and fallback lesson generation for core A1-A2, B1, and initial B2 topics
 - A server-rendered WSGI web interface for lesson delivery, quizzes, answer explanations, and progress tracking
 - Automated testing with `pytest`
 
@@ -89,6 +89,8 @@ python main.py
 python main.py status
 python main.py serve
 python main.py reset-progress
+python main.py set-progress --band B1
+python main.py set-progress --level 9
 ```
 
 If you installed the package with `pip install -e .`, the same commands are also available as:
@@ -98,12 +100,15 @@ lumina-romana
 lumina-romana status
 lumina-romana serve
 lumina-romana reset-progress
+lumina-romana set-progress --band B1
+lumina-romana set-progress --level 9
 ```
 
 Command summary:
 - `status`: loads configuration, initializes the database and services, and prints the current runtime summary. This is also the default command when no subcommand is given.
 - `serve`: starts the local web server for the browser-based learner interface.
 - `reset-progress`: clears the default learner's saved progress and recreates a fresh Level 1 / A1 / difficulty 1 state for testing.
+- `set-progress`: jumps the default learner to a testing position by CEFR band or exact roadmap level, clearing saved lesson history, quiz attempts, and wordbank state first so the next session starts cleanly from that point.
 
 Examples:
 
@@ -111,7 +116,20 @@ Examples:
 python main.py status
 python main.py serve
 python main.py reset-progress
+python main.py set-progress --band A2
+python main.py set-progress --band B2
+python main.py set-progress --level 8
+python main.py set-progress --level 9 --difficulty 10
 ```
+
+`set-progress` targets:
+
+- `--band A1` jumps to Level 1
+- `--band A2` jumps to Level 5
+- `--band B1` jumps to Level 7
+- `--band B2` jumps to Level 9
+- `--level N` jumps to the exact roadmap level from 1 through 10
+- `--difficulty N` optionally overrides the default testing difficulty for that jump
 
 ## Web UI
 Stage 6 introduces a browser-based learner loop aligned to the MVP requirements in [spec.md](C:/Users/jarec/Dropbox/Python/LuminaRomana/spec.md).
@@ -138,6 +156,7 @@ Current browser flow:
 - Review-session generation after scores below 60 percent
 - Topic progression gated by at least five completed question sets, 80 percent or higher on the current set, and an 80 percent or higher average across all sets for the current topic
 - Initial B1-capable sessions with multi-sentence examples, sentence transformation tasks, and dialogue completion tasks when the learner reaches Levels 7 to 8
+- Initial B2-capable sessions with reading comprehension, guided writing, rubric display, and paragraph-style prompts when the learner reaches Levels 9 to 10
 
 The web layer is intentionally thin and reuses the existing persistence, roadmap, difficulty, AI, and validation services instead of duplicating business logic.
 
@@ -229,8 +248,8 @@ Notes:
 - API keys are loaded from environment variables only
 - Request and response metadata are logged without logging the API key
 - AI-generated lessons are now validated before they are returned from `AIService`
-- If AI output is invalid or the provider is unavailable, supported beginner and initial B1 topics fall back to deterministic template lessons
-- Later-stage B2 topics without curated fallback templates still depend on validated AI output
+- If AI output is invalid or the provider is unavailable, supported beginner, B1, and initial B2 topics fall back to deterministic template lessons
+- Later-stage enhancements beyond the current B2 set still depend on validated AI output or future curated expansions
 
 ## Development Notes
 - The implementation should follow the requirements in [spec.md](C:/Users/jarec/Dropbox/Python/LuminaRomana/spec.md)
@@ -246,13 +265,14 @@ This repository now has:
 - Stage 2 curriculum metadata for Levels 1 through 10 mapped across A1, A2, B1, and B2
 - Prerequisite-aware topic selection and CEFR target-band lookup in `ContentLibrary`
 - A placement-test blueprint that samples the roadmap from A1 through B2
-- Placement evaluation logic that can classify through B1 and recommend a starting topic
+- Placement evaluation logic that can classify through B2 and recommend a starting topic
 - Stage 3 adaptive difficulty assessment with rolling score analysis, review-session planning, and prompt-constraint generation
 - Explicit topic gating helpers that prevent access to blocked later-stage content, including B2 content with weak B1 prerequisites
 - Stage 4 AI integration through `app.ai.AIService`, provider-backed JSON generation requests, prompt builders, transient retry handling, and metadata logging without secrets
 - Stage 5 validation through `app.validation.ContentValidator`, including schema-like checks, scope enforcement, answer consistency checks, and sensibility filtering
-- Stage 5 and Stage 7 fallback lesson generation in `ContentLibrary` for the core A1-A2 roadmap topics plus initial B1 topics when validated AI output is unavailable
+- Stage 5, Stage 7, and Stage 8 fallback lesson generation in `ContentLibrary` for the core A1-A2 roadmap topics plus initial B1 and B2 topics when validated AI output is unavailable
 - Stage 6 learner-session orchestration in `app.services.learning`, including level introductions, lesson resume, multi-set topic scoring, progress updates, mastery advancement, review-session routing, and CLI reset support
 - Stage 7 intermediate task support, including sentence transformation, dialogue completion, B1 multi-sentence examples, and integrated grammar skill tracking
+- Stage 8 B2 task support, including reading comprehension, guided writing with rubrics, discourse-marker work, paragraph-style prompt rendering, and visible reading/writing skill signals in the web UI
 - Stage 6 browser-facing lesson, level-intro, quiz, explanation, and progress screens in `app.ui.web`
 - Stage 6 integration tests covering the browser flow and persistence-backed progress updates

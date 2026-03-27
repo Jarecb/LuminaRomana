@@ -176,3 +176,16 @@ def test_b1_fallback_support_includes_integrated_tasks_and_vocab():
     assert any(question.question_type.value == "sentence_transformation" for question in lesson.quiz_questions)
     assert any(question.question_type.value == "dialogue_completion" for question in lesson.quiz_questions)
     assert ("trebuie", "must / have to") in vocab
+
+
+def test_b2_fallback_support_includes_reading_and_guided_writing():
+    library = ContentLibrary()
+
+    lesson = library.build_fallback_lesson("b2_core_structures", difficulty=9, question_count=5)
+    vocab = library.vocabulary_for_topic("b2_core_structures")
+
+    assert lesson.cefr_band == CEFRBand.B2
+    assert any(question.question_type.value == "reading_comprehension" for question in lesson.quiz_questions)
+    assert any(question.question_type.value == "guided_writing" for question in lesson.quiz_questions)
+    assert any(question.rubric for question in lesson.quiz_questions)
+    assert ("prin urmare", "therefore") in vocab
