@@ -1,0 +1,99 @@
+Metadata-Version: 2.4
+Name: lumina-romana
+Version: 0.1.0
+Summary: Adaptive Romanian grammar learning application scaffold.
+Requires-Python: >=3.12
+Description-Content-Type: text/markdown
+Provides-Extra: dev
+Requires-Dist: pytest<9.0,>=8.0; extra == "dev"
+
+# Lumina Romana
+
+Lumina Romana is a planned Python application for learning Romanian through adaptive grammar lessons and validated AI-generated quizzes. The project is intended to combine a structured Romanian learning roadmap with AI-assisted content generation, local user progress tracking, and difficulty scaling based on quiz performance.
+
+The current repository is in Stage 0 foundation setup. The full product direction is defined in [spec.md](C:/Users/jarec/Dropbox/Python/LuminaRomana/spec.md), and the staged implementation roadmap is defined in [plan.md](C:/Users/jarec/Dropbox/Python/LuminaRomana/plan.md).
+
+## Project Intent
+- Teach Romanian grammar progressively, starting from phonetics and basic verb usage
+- Generate lessons, examples, and quizzes with AI
+- Validate AI output so questions remain sensible and on-topic
+- Adapt lesson difficulty using recent learner performance
+- Persist user progress locally
+
+## Tech Direction
+- Python 3.12+
+- `pyproject.toml`-based project setup
+- Planned local persistence with SQLite
+- Planned AI provider integration through an isolated service layer
+- Planned automated testing with `pytest`
+
+## Repository Layout
+- [app/](C:/Users/jarec/Dropbox/Python/LuminaRomana/app): application package scaffold for models, services, AI, validation, storage, controllers, and UI
+- [main.py](C:/Users/jarec/Dropbox/Python/LuminaRomana/main.py): top-level entrypoint
+- [pyproject.toml](C:/Users/jarec/Dropbox/Python/LuminaRomana/pyproject.toml): package metadata and test tooling
+- [spec.md](C:/Users/jarec/Dropbox/Python/LuminaRomana/spec.md): full product and test specification
+- [plan.md](C:/Users/jarec/Dropbox/Python/LuminaRomana/plan.md): staged implementation plan
+
+## Prerequisites
+- Python 3.12 or newer
+- PowerShell on Windows, or an equivalent shell
+
+## Build
+There is no separate build step yet. This is currently a simple Python project with a package entrypoint and test scaffold.
+
+To prepare a local environment:
+
+```powershell
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+pip install -e .
+pip install -e ".[dev]"
+```
+
+If editable install is not needed, you can run the entrypoint directly with Python.
+
+## Run
+Available run commands:
+
+```powershell
+python main.py
+python -m app
+lumina-romana
+```
+
+Expected current behavior:
+- Loads base configuration from environment variables
+- Configures application logging
+- Prints a startup summary
+
+## Test
+Run the Stage 0 smoke tests with:
+
+```powershell
+pytest
+```
+
+## Deploy
+There is no deployment pipeline yet.
+
+Planned deployment approach:
+- Local-first development and usage
+- Environment-based configuration for AI API keys
+- Optional packaging as a CLI application
+- Future deployment targets may include a small web service or desktop distribution after the core learning engine is implemented
+
+## Configuration
+The scaffold supports these environment variables:
+
+- `LUMINA_ROMANA_ENV`
+- `LUMINA_ROMANA_LOG_LEVEL`
+- `LUMINA_ROMANA_DATA_DIR`
+
+## Development Notes
+- The implementation should follow the requirements in [spec.md](C:/Users/jarec/Dropbox/Python/LuminaRomana/spec.md)
+- AI-generated content must be validated before user display
+- Adaptive quiz logic and review-session generation are core product requirements
+
+## Current Status
+This repository now has the Stage 0 project foundation in place. Domain logic, persistence, roadmap management, and AI integration remain to be implemented in later stages.

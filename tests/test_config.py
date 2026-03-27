@@ -26,4 +26,4 @@ def test_create_application_uses_loaded_settings(monkeypatch, tmp_path):
     assert app.settings.environment == "test"
     assert app.logger.name == "lumina_romana"
     assert app.settings.database_path.exists()
-    assert len(app.content_library.all_topics()) == 6
+    assert len(app.content_library.all_topics()) == 10
