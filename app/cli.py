@@ -35,6 +35,27 @@ def main(argv: Sequence[str] | None = None) -> int:
         type=int,
         help="Override the default testing difficulty for the target position.",
     )
+    sample_parser = subcommands.add_parser(
+        "sample-content",
+        help="Run the Stage 9 content-quality sampling workflow.",
+    )
+    sample_parser.add_argument(
+        "--topics",
+        nargs="*",
+        help="Optional topic ids to sample. Defaults to the full roadmap.",
+    )
+    sample_parser.add_argument(
+        "--question-count",
+        type=int,
+        default=5,
+        help="Number of questions per sampled lesson.",
+    )
+    sample_parser.add_argument(
+        "--goal",
+        default="lesson",
+        choices=("lesson", "review", "practice"),
+        help="Session goal to use for the sample run.",
+    )
     args = parser.parse_args(list(argv) if argv is not None else sys.argv[1:])
 
     app = create_application()
@@ -63,6 +84,32 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"Current difficulty: {progress.current_difficulty}")
         print(f"Next topic: {next_topic_label}")
         return 0
+    if command == "sample-content":
+        before = app.ai_service.metrics_snapshot()
+        report = app.quality_service.sample_lessons(
+            topic_ids=args.topics,
+            question_count=args.question_count,
+            session_goal=args.goal,
+        )
+        after = app.ai_service.metrics_snapshot()
+        print("Lumina Romana content-quality sample")
+        print(f"Samples run: {report.total_samples}")
+        print(f"AI-backed samples: {report.ai_samples}")
+        print(f"Fallback samples: {report.fallback_samples}")
+        print(
+            "Metrics delta: "
+            f"validation_failures={after.validation_failures - before.validation_failures}, "
+            f"retries={after.retries_attempted - before.retries_attempted}, "
+            f"fallbacks={after.fallback_generations - before.fallback_generations}"
+        )
+        for sample in report.samples:
+            print(
+                f"- {sample.topic_id}: level {sample.level} / {sample.cefr_band} / "
+                f"source={sample.source} / question_types={', '.join(sample.question_types)}"
+            )
+            if sample.warnings:
+                print(f"  warnings: {' | '.join(sample.warnings)}")
+        return 0
 
     app.logger.info("Loading %s diagnostics in %s mode", app.settings.app_name, app.settings.environment)
     print(f"{app.settings.app_name} developer status")
@@ -74,6 +121,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         "AI provider: "
         f"{app.ai_service.provider.provider_name} "
         f"({app.ai_service.provider.model}, configured={app.ai_service.is_configured})"
+    )
+    metrics = app.ai_service.metrics_snapshot()
+    print(
+        "AI metrics: "
+        f"requests={metrics.total_requests}, "
+        f"validation_failures={metrics.validation_failures}, "
+        f"retries={metrics.retries_attempted}, "
+        f"fallbacks={metrics.fallback_generations}"
     )
     print(f"Web UI: http://{app.settings.web.host}:{app.settings.web.port}")
     print("Run `python main.py serve` to start the browser-based learner interface from this checkout.")

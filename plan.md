@@ -359,6 +359,8 @@ Notes:
 - The existing multi-set mastery and prerequisite gating model continues to prevent B2 progression from single-score spikes, while the web UI now surfaces the related skill signals more clearly
 
 ## Stage 9: Quality Hardening
+Status: completed on 2026-03-27.
+
 Objective: reduce regressions and improve trustworthiness before wider use.
 
 Deliverables:
@@ -372,6 +374,26 @@ Exit criteria:
 - Core flows are covered by automated tests
 - AI generation quality is measurable
 - Validation and retry behavior are stable under repeated runs
+
+Implementation notes:
+- Added measurable AI-generation metrics to `app.ai.AIService`, including counters for:
+  total requests, validation failures, retry attempts, transient failures, provider failures, JSON parse failures, successful generations, and fallback generations
+- Exposed the Stage 9 metrics snapshot through the developer CLI `status` output so validation and retry behavior can be inspected without code changes
+- Added a reusable content-quality sampling workflow in `app/services/quality.py` and a corresponding CLI command:
+  `sample-content`
+- The sampling workflow now generates validated lesson samples across selected topics and reports:
+  source type, question-type mix, warnings, and AI-metrics deltas for the run
+- Added prompt regression fixtures under:
+  `tests/fixtures/prompt_regression_cases.json`
+  with regression coverage in `tests/test_quality.py`
+- Expanded hardening coverage around:
+  retry accounting, validation-failure metrics, fallback metrics, prompt regression expectations, and CLI sampling behavior
+- Updated documentation in `README.md` to cover:
+  AI metrics visibility, the sampling workflow, and the broader Stage 9 hardening status
+
+Notes:
+- Stage 9 focuses on measuring and defending the existing learning pipeline rather than changing the learner-facing roadmap
+- Prompt regression fixtures intentionally lock down representative metadata and required prompt snippets rather than entire prompt bodies, which keeps the tests useful without becoming needlessly brittle
 
 ## Stage 10: Packaging and Deployment
 Objective: make the application easy to run outside the development environment.

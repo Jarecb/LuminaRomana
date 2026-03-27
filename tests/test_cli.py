@@ -87,3 +87,18 @@ def test_set_progress_can_jump_to_exact_level_with_difficulty_override(capsys, m
     assert progress is not None
     assert progress.current_level == 9
     assert progress.current_difficulty == 10
+
+
+def test_sample_content_runs_sampling_workflow(capsys, monkeypatch, tmp_path):
+    monkeypatch.setenv("LUMINA_ROMANA_ENV", "test")
+    monkeypatch.setenv("LUMINA_ROMANA_DATA_DIR", str(tmp_path / "data"))
+
+    exit_code = main(["sample-content", "--topics", "romanian_basics", "b2_core_structures"])
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert "Lumina Romana content-quality sample" in captured.out
+    assert "Samples run: 2" in captured.out
+    assert "Metrics delta:" in captured.out
+    assert "- romanian_basics:" in captured.out
+    assert "- b2_core_structures:" in captured.out

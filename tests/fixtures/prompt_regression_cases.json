@@ -1,0 +1,106 @@
+[
+  {
+    "name": "a2_lesson_prompt",
+    "topic_id": "pronouns_and_tenses",
+    "session_goal": "lesson",
+    "question_count": 4,
+    "progress": {
+      "current_level": 5,
+      "current_cefr_band": "A2",
+      "current_difficulty": 4,
+      "recent_scores": [82.0, 91.0, 93.0],
+      "mastery_matrix": {
+        "romanian_basics": 0.95,
+        "nouns_and_articles": 0.9,
+        "core_cases": 0.84,
+        "present_tense_verbs": 0.8
+      }
+    },
+    "focus_tags": ["feminine_endings", "object_pronouns"],
+    "expected_metadata": {
+      "topic_id": "pronouns_and_tenses",
+      "recommended_cefr_band": "A2",
+      "difficulty": 5,
+      "question_count": 4
+    },
+    "required_snippets": [
+      "target CEFR band is A2",
+      "Recommended next difficulty from the adaptive engine: 5.",
+      "Focus tags from recent learner errors: feminine_endings, object_pronouns."
+    ]
+  },
+  {
+    "name": "b1_review_prompt",
+    "topic_id": "narrative_b1_grammar",
+    "session_goal": "review",
+    "question_count": 5,
+    "progress": {
+      "current_level": 7,
+      "current_cefr_band": "B1",
+      "current_difficulty": 7,
+      "recent_scores": [78.0, 74.0, 58.0],
+      "mastery_matrix": {
+        "romanian_basics": 0.9,
+        "nouns_and_articles": 0.88,
+        "core_cases": 0.86,
+        "present_tense_verbs": 0.84,
+        "pronouns_and_tenses": 0.8,
+        "connected_communication": 0.79
+      },
+      "skill_scores": {
+        "grammar": 79.0,
+        "integrated_grammar": 76.0
+      }
+    },
+    "focus_tags": ["imperfect", "relative_clauses"],
+    "expected_metadata": {
+      "topic_id": "narrative_b1_grammar",
+      "recommended_cefr_band": "A2",
+      "question_count": 5
+    },
+    "required_snippets": [
+      "If the target CEFR band is B1 or above",
+      "Maximum connected context sentences per item: 2.",
+      "Validation feedback from previous failed attempts: none."
+    ]
+  },
+  {
+    "name": "b2_lesson_prompt",
+    "topic_id": "b2_core_structures",
+    "session_goal": "lesson",
+    "question_count": 5,
+    "progress": {
+      "current_level": 9,
+      "current_cefr_band": "B2",
+      "current_difficulty": 9,
+      "recent_scores": [88.0, 90.0, 91.0],
+      "mastery_matrix": {
+        "romanian_basics": 0.9,
+        "nouns_and_articles": 0.88,
+        "core_cases": 0.86,
+        "present_tense_verbs": 0.84,
+        "pronouns_and_tenses": 0.82,
+        "connected_communication": 0.8,
+        "narrative_b1_grammar": 0.8,
+        "b1_b2_transition": 0.8
+      },
+      "skill_scores": {
+        "grammar": 84.0,
+        "integrated_grammar": 83.0,
+        "reading": 82.0,
+        "writing": 81.0
+      }
+    },
+    "focus_tags": ["reported_speech", "advanced_connectors"],
+    "expected_metadata": {
+      "topic_id": "b2_core_structures",
+      "recommended_cefr_band": "B2",
+      "question_count": 5
+    },
+    "required_snippets": [
+      "If the target CEFR band is B2, include at least one reading_comprehension task and one guided_writing task",
+      "B2 prompts should support opinion, comparison, justification, reported speech, connector control, or passive and impersonal structures",
+      "Focus tags from recent learner errors: reported_speech, advanced_connectors."
+    ]
+  }
+]
