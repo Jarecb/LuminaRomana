@@ -1,5 +1,23 @@
 # Lumina Romana Implementation Plan
 
+## Index
+- [Goal](#goal)
+- [Delivery Principles](#delivery-principles)
+- [Stage 0: Foundation and Project Setup](#stage-0-foundation-and-project-setup)
+- [Stage 1: Core Domain Model and Local Persistence](#stage-1-core-domain-model-and-local-persistence)
+- [Stage 2: Roadmap and Curriculum Engine](#stage-2-roadmap-and-curriculum-engine)
+- [Stage 3: Adaptive Difficulty Engine](#stage-3-adaptive-difficulty-engine)
+- [Stage 4: AI Integration Layer](#stage-4-ai-integration-layer)
+- [Stage 5: Validation and Fallback Content](#stage-5-validation-and-fallback-content)
+- [Stage 6: MVP Learning Loop](#stage-6-mvp-learning-loop)
+- [Stage 7: B1 Expansion](#stage-7-b1-expansion)
+- [Stage 8: B2 Learning Features](#stage-8-b2-learning-features)
+- [Stage 9: Quality Hardening](#stage-9-quality-hardening)
+- [Stage 10: Packaging and Deployment](#stage-10-packaging-and-deployment)
+- [Recommended Build Order](#recommended-build-order)
+- [Milestones](#milestones)
+- [Immediate Next Steps](#immediate-next-steps)
+
 ## Goal
 Implement the application in iterative stages so the project moves from a local scaffold to a working Romanian learning platform with adaptive AI-generated content and support up to CEFR B2.
 
@@ -143,6 +161,8 @@ Notes:
 - Prompt constraints are now generated deterministically from learner performance, CEFR state, and prerequisite blocking so the later AI layer can consume stable adaptation signals
 
 ## Stage 4: AI Integration Layer
+Status: completed on 2026-03-27.
+
 Objective: connect the system to an LLM provider behind a stable interface.
 
 Deliverables:
@@ -156,6 +176,27 @@ Exit criteria:
 - The app can request lesson content from one provider
 - Prompt construction uses learner state, topic, difficulty, and CEFR band
 - Failure paths are logged and recoverable
+
+Implementation notes:
+- Added a provider-agnostic AI layer under `app/ai/` with:
+  `AIService`, prompt-builder components, provider response types, and AI-specific error classes
+- Implemented an OpenAI-compatible chat-completions provider behind the stable provider interface, plus a disabled provider used when no API configuration is present
+- Added prompt construction that combines:
+  roadmap topic metadata, learner CEFR state, adaptive difficulty assessment, focus tags, blocked-topic gating, and session-goal constraints
+- Extended `Settings` with environment-based AI configuration for:
+  `LUMINA_ROMANA_AI_ENABLED`, `LUMINA_ROMANA_AI_PROVIDER`, `LUMINA_ROMANA_AI_MODEL`, `LUMINA_ROMANA_AI_API_KEY`, `LUMINA_ROMANA_AI_BASE_URL`, `LUMINA_ROMANA_AI_TIMEOUT_SECONDS`, and `LUMINA_ROMANA_AI_MAX_RETRIES`
+- Wired the AI service into application bootstrap and surfaced provider status in CLI startup output
+- Added retry handling for transient provider and network failures, with request and response logging that records metadata and token usage without logging secrets
+- Added Stage 4 coverage in:
+  `tests/test_ai.py`
+  `tests/test_config.py`
+  `tests/test_cli.py`
+- Verified Stage 4 locally with:
+  `.\.venv\Scripts\python.exe -m pytest`
+
+Notes:
+- AI integration is now available when an API key is configured, but Stage 5 validation and fallback logic is still required before generated content should be treated as learner-safe
+- The first provider implementation targets the OpenAI chat completions API; the service boundary is intentionally provider-agnostic so additional providers can be added later
 
 ## Stage 5: Validation and Fallback Content
 Objective: ensure AI output is safe enough to use.
@@ -279,7 +320,7 @@ Validation is placed before heavy AI reliance on purpose. Without that sequencin
 - Milestone 5: packaging and deployment readiness
 
 ## Immediate Next Steps
-1. Implement Stage 3 adaptive difficulty and review logic on top of the completed curriculum engine.
-2. Implement Stage 5 validation and fallback generation so AI-backed content is safe before learner delivery.
-3. Implement Stage 4 AI integration behind a provider-agnostic interface using the curriculum and adaptive signals already in place.
-4. Deliver Stage 6 with a web-based GUI that shows lessons, tests, explanations, learner progress, and current CEFR competence band.
+1. Implement Stage 5 validation and fallback generation so AI-backed content is safe before learner delivery.
+2. Deliver Stage 6 with a web-based GUI that shows lessons, tests, explanations, learner progress, and current CEFR competence band.
+3. Extend the AI layer to support lesson orchestration flows once validation is in place.
+4. Add end-to-end generation tests that cover bootstrap, provider calls, validation, and persistence together.
