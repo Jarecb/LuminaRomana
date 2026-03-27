@@ -1,11 +1,12 @@
 from pathlib import Path
 
-from app.models import CEFRBand, ExampleSentence, Lesson, Question, QuestionType, QuizAttempt, UserProgress
+from app.models import CEFRBand, ExampleSentence, Lesson, Question, QuestionType, QuizAttempt, UserProgress, WordbankEntry
 from app.storage import (
     SQLiteLessonRepository,
     SQLiteQuizAttemptRepository,
     SQLiteStorage,
     SQLiteUserProgressRepository,
+    SQLiteWordbankRepository,
 )
 
 
@@ -101,3 +102,33 @@ def test_lessons_and_attempts_are_stored_and_retrieved(tmp_path):
     assert len(attempts) == 1
     assert attempts[0].score_percent == 72.5
     assert attempts[0].mistake_tags == ["definite_articles"]
+
+
+def test_wordbank_entries_are_stored_and_searchable(tmp_path):
+    storage = build_storage(tmp_path)
+    user_repository = SQLiteUserProgressRepository(storage)
+    wordbank_repository = SQLiteWordbankRepository(storage)
+
+    user_repository.save(UserProgress(user_id="learner-1"))
+    wordbank_repository.upsert(
+        WordbankEntry(
+            user_id="learner-1",
+            word="baiatul",
+            definition="the boy",
+            topic="nouns_and_articles",
+        )
+    )
+    wordbank_repository.upsert(
+        WordbankEntry(
+            user_id="learner-1",
+            word="cadoul",
+            definition="the gift",
+            topic="nouns_and_articles",
+        )
+    )
+
+    all_entries = wordbank_repository.search_for_user("learner-1")
+    filtered_entries = wordbank_repository.search_for_user("learner-1", query="gift")
+
+    assert [entry.word for entry in all_entries] == ["baiatul", "cadoul"]
+    assert [entry.word for entry in filtered_entries] == ["cadoul"]

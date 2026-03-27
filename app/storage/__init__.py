@@ -1,9 +1,10 @@
-from app.storage.interfaces import LessonRepository, QuizAttemptRepository, UserProgressRepository
+from app.storage.interfaces import LessonRepository, QuizAttemptRepository, UserProgressRepository, WordbankRepository
 from app.storage.sqlite import (
     SQLiteLessonRepository,
     SQLiteQuizAttemptRepository,
     SQLiteStorage,
     SQLiteUserProgressRepository,
+    SQLiteWordbankRepository,
 )
 
 __all__ = [
@@ -13,5 +14,7 @@ __all__ = [
     "SQLiteQuizAttemptRepository",
     "SQLiteStorage",
     "SQLiteUserProgressRepository",
+    "SQLiteWordbankRepository",
     "UserProgressRepository",
+    "WordbankRepository",
 ]

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from app.models import Lesson, QuizAttempt, UserProgress
+from app.models import Lesson, QuizAttempt, UserProgress, WordbankEntry
 
 
 class UserProgressRepository(Protocol):
@@ -25,3 +25,9 @@ class QuizAttemptRepository(Protocol):
     def save(self, attempt: QuizAttempt) -> None: ...
 
     def list_for_user(self, user_id: str, limit: int = 20) -> list[QuizAttempt]: ...
+
+
+class WordbankRepository(Protocol):
+    def upsert(self, entry: WordbankEntry) -> None: ...
+
+    def search_for_user(self, user_id: str, query: str = "", limit: int = 100) -> list[WordbankEntry]: ...
