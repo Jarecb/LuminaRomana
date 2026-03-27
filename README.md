@@ -1,8 +1,8 @@
 # Lumina Romana
 
-Lumina Romana is a Python application for learning Romanian through adaptive grammar lessons and validated AI-generated quizzes. The project combines a structured Romanian learning roadmap with AI-assisted content generation, local user progress tracking, deterministic difficulty scaling based on quiz performance, and a provider-backed AI integration layer.
+Lumina Romana is a Python application for learning Romanian through adaptive grammar lessons and validated AI-generated quizzes. The project combines a structured Romanian learning roadmap with AI-assisted content generation, local user progress tracking, deterministic difficulty scaling based on quiz performance, a provider-backed AI integration layer, and a validation-plus-fallback safety gate in front of learner-facing content.
 
-The repository currently includes the Stage 0 foundation, Stage 1 persistence work, Stage 2 curriculum engine, Stage 3 adaptive difficulty engine, and Stage 4 AI integration layer. The full product direction is defined in [spec.md](C:/Users/jarec/Dropbox/Python/LuminaRomana/spec.md), and the staged implementation roadmap is defined in [plan.md](C:/Users/jarec/Dropbox/Python/LuminaRomana/plan.md).
+The repository currently includes the Stage 0 foundation, Stage 1 persistence work, Stage 2 curriculum engine, Stage 3 adaptive difficulty engine, Stage 4 AI integration layer, and Stage 5 validation and fallback content. The full product direction is defined in [spec.md](C:/Users/jarec/Dropbox/Python/LuminaRomana/spec.md), and the staged implementation roadmap is defined in [plan.md](C:/Users/jarec/Dropbox/Python/LuminaRomana/plan.md).
 
 ## Index
 - [Project Intent](#project-intent)
@@ -33,6 +33,7 @@ The repository currently includes the Stage 0 foundation, Stage 1 persistence wo
 - Dataclass-based domain models for learner progress, lessons, questions, and quiz attempts
 - Seeded roadmap metadata and curriculum selection from A1 through B2
 - Provider-agnostic AI integration with prompt builders, retry handling, and an OpenAI-compatible provider implementation
+- Deterministic lesson validation, scope checking, and fallback lesson generation for core A1-A2 topics
 - Automated testing with `pytest`
 
 ## Repository Layout
@@ -91,6 +92,7 @@ Expected current behavior:
 - Initializes the local SQLite database
 - Loads seeded roadmap metadata
 - Builds the adaptive difficulty and AI service layers
+- Builds the validation and fallback content layer
 - Prints a startup summary including AI provider status
 
 ## Test
@@ -178,12 +180,14 @@ Notes:
 
 - API keys are loaded from environment variables only
 - Request and response metadata are logged without logging the API key
-- Stage 4 only establishes provider access and prompt construction; Stage 5 validation is still required before generated lessons should be considered learner-safe
+- AI-generated lessons are now validated before they are returned from `AIService`
+- If AI output is invalid or the provider is unavailable, supported core topics fall back to deterministic template lessons
+- Later-stage topics without curated fallback templates still depend on validated AI output
 
 ## Development Notes
 - The implementation should follow the requirements in [spec.md](C:/Users/jarec/Dropbox/Python/LuminaRomana/spec.md)
 - AI-generated content must be validated before user display
-- Adaptive quiz logic, review-session generation, and provider-backed prompt construction are core product requirements
+- Adaptive quiz logic, review-session generation, provider-backed prompt construction, and validation-backed fallback generation are core product requirements
 
 ## Current Status
 This repository now has:
@@ -197,5 +201,7 @@ This repository now has:
 - Stage 3 adaptive difficulty assessment with rolling score analysis, review-session planning, and prompt-constraint generation
 - Explicit topic gating helpers that prevent access to blocked later-stage content, including B2 content with weak B1 prerequisites
 - Stage 4 AI integration through `app.ai.AIService`, provider-backed JSON generation requests, prompt builders, transient retry handling, and metadata logging without secrets
+- Stage 5 validation through `app.validation.ContentValidator`, including schema-like checks, scope enforcement, answer consistency checks, and sensibility filtering
+- Stage 5 fallback lesson generation in `ContentLibrary` for the core A1-A2 roadmap topics when validated AI output is unavailable
 
-Stage 5 validation and fallback generation, plus the learner-facing lesson loop, remain for later stages.
+Stage 6 and the learner-facing lesson loop remain for later stages.

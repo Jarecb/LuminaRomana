@@ -13,6 +13,7 @@ from app.storage import (
     SQLiteStorage,
     SQLiteUserProgressRepository,
 )
+from app.validation import ContentValidator
 
 
 @dataclass(slots=True)
@@ -74,6 +75,7 @@ def create_application() -> Application:
             prompt_builder=PromptBuilder(),
             content_library=content_library,
             difficulty_manager=difficulty_manager,
+            content_validator=ContentValidator(),
             logger=logger.getChild("ai"),
             max_retries=ai_settings.max_retries,
         ),
