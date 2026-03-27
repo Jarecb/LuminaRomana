@@ -312,6 +312,10 @@ class SQLiteLessonRepository:
             ).fetchall()
         return [_lesson_from_record(row["payload"]) for row in rows]
 
+    def delete_for_user(self, user_id: str) -> None:
+        with self.storage.connection() as conn:
+            conn.execute("DELETE FROM lesson_history WHERE user_id = ?", (user_id,))
+
 
 @dataclass(slots=True)
 class SQLiteQuizAttemptRepository:
@@ -366,6 +370,10 @@ class SQLiteQuizAttemptRepository:
             )
             for row in rows
         ]
+
+    def delete_for_user(self, user_id: str) -> None:
+        with self.storage.connection() as conn:
+            conn.execute("DELETE FROM quiz_attempts WHERE user_id = ?", (user_id,))
 
 
 @dataclass(slots=True)
@@ -427,3 +435,7 @@ class SQLiteWordbankRepository:
             )
             for row in rows
         ]
+
+    def delete_for_user(self, user_id: str) -> None:
+        with self.storage.connection() as conn:
+            conn.execute("DELETE FROM wordbank WHERE user_id = ?", (user_id,))

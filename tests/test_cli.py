@@ -43,3 +43,47 @@ def test_reset_progress_clears_default_learner(capsys, monkeypatch, tmp_path):
     assert reset_progress.current_level == 1
     assert reset_progress.current_difficulty == 1
     assert reset_progress.total_xp == 0
+
+
+def test_set_progress_can_jump_to_cefr_band(capsys, monkeypatch, tmp_path):
+    data_dir = tmp_path / "data"
+    monkeypatch.setenv("LUMINA_ROMANA_ENV", "test")
+    monkeypatch.setenv("LUMINA_ROMANA_DATA_DIR", str(data_dir))
+
+    exit_code = main(["set-progress", "--band", "B1"])
+    captured = capsys.readouterr()
+
+    storage = SQLiteStorage(data_dir / "lumina_romana.db")
+    storage.initialize()
+    repository = SQLiteUserProgressRepository(storage)
+    progress = repository.get(DEFAULT_USER_ID)
+
+    assert exit_code == 0
+    assert "Set learner progress for default-learner." in captured.out
+    assert "Current level: 7" in captured.out
+    assert "Current CEFR band: B1" in captured.out
+    assert progress is not None
+    assert progress.current_level == 7
+    assert progress.current_cefr_band.value == "B1"
+
+
+def test_set_progress_can_jump_to_exact_level_with_difficulty_override(capsys, monkeypatch, tmp_path):
+    data_dir = tmp_path / "data"
+    monkeypatch.setenv("LUMINA_ROMANA_ENV", "test")
+    monkeypatch.setenv("LUMINA_ROMANA_DATA_DIR", str(data_dir))
+
+    exit_code = main(["set-progress", "--level", "9", "--difficulty", "10"])
+    captured = capsys.readouterr()
+
+    storage = SQLiteStorage(data_dir / "lumina_romana.db")
+    storage.initialize()
+    repository = SQLiteUserProgressRepository(storage)
+    progress = repository.get(DEFAULT_USER_ID)
+
+    assert exit_code == 0
+    assert "Current level: 9" in captured.out
+    assert "Current CEFR band: B2" in captured.out
+    assert "Current difficulty: 10" in captured.out
+    assert progress is not None
+    assert progress.current_level == 9
+    assert progress.current_difficulty == 10
