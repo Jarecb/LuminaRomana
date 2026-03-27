@@ -100,6 +100,35 @@ def test_available_topics_require_mastered_prerequisites():
     ]
 
 
+def test_b2_topics_remain_locked_when_b1_mastery_is_below_threshold():
+    from app.models import UserProgress
+
+    library = ContentLibrary()
+    user_progress = UserProgress(
+        user_id="user-1",
+        current_level=9,
+        current_cefr_band=CEFRBand.B1,
+        mastery_matrix={
+            "romanian_basics": 0.90,
+            "nouns_and_articles": 0.88,
+            "core_cases": 0.86,
+            "present_tense_verbs": 0.91,
+            "pronouns_and_tenses": 0.82,
+            "connected_communication": 0.80,
+            "narrative_b1_grammar": 0.79,
+            "b1_b2_transition": 0.77,
+        },
+    )
+
+    blocking_topics = library.blocking_topics_for_user("b2_core_structures", user_progress)
+
+    assert library.is_topic_unlocked("b2_core_structures", user_progress) is False
+    assert [topic.topic_id for topic in blocking_topics] == [
+        "narrative_b1_grammar",
+        "b1_b2_transition",
+    ]
+
+
 def test_placement_blueprint_spans_a1_to_b2():
     library = ContentLibrary()
 

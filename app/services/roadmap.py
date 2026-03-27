@@ -68,6 +68,50 @@ class ContentLibrary:
             return topic
         return None
 
+    def blocking_topics_for_user(
+        self,
+        topic_id: str,
+        user_progress: UserProgress,
+        mastery_threshold: float = 0.75,
+        b2_prerequisite_threshold: float = 0.8,
+    ) -> tuple[TopicMetadata, ...]:
+        self._validate_mastery_threshold(mastery_threshold)
+        self._validate_mastery_threshold(b2_prerequisite_threshold)
+        topic = self._require_topic(topic_id)
+        mastery_matrix = user_progress.mastery_matrix
+        blocking_topics: list[TopicMetadata] = []
+        seen: set[str] = set()
+
+        def visit(candidate: TopicMetadata, threshold: float) -> None:
+            for prerequisite_id in candidate.prerequisites:
+                prerequisite = self._topics_by_id[prerequisite_id]
+                visit(prerequisite, threshold)
+                if mastery_matrix.get(prerequisite_id, 0.0) < threshold and prerequisite_id not in seen:
+                    blocking_topics.append(prerequisite)
+                    seen.add(prerequisite_id)
+
+        visit(topic, mastery_threshold)
+        if topic.cefr_band == CEFRBand.B2:
+            for b1_topic in self.topics_for_band(CEFRBand.B1):
+                if mastery_matrix.get(b1_topic.topic_id, 0.0) < b2_prerequisite_threshold and b1_topic.topic_id not in seen:
+                    blocking_topics.append(b1_topic)
+                    seen.add(b1_topic.topic_id)
+        return tuple(blocking_topics)
+
+    def is_topic_unlocked(
+        self,
+        topic_id: str,
+        user_progress: UserProgress,
+        mastery_threshold: float = 0.75,
+        b2_prerequisite_threshold: float = 0.8,
+    ) -> bool:
+        return not self.blocking_topics_for_user(
+            topic_id=topic_id,
+            user_progress=user_progress,
+            mastery_threshold=mastery_threshold,
+            b2_prerequisite_threshold=b2_prerequisite_threshold,
+        )
+
     def _first_unmastered_prerequisite(
         self,
         topic: TopicMetadata,
@@ -86,6 +130,12 @@ class ContentLibrary:
     def _validate_mastery_threshold(self, mastery_threshold: float) -> None:
         if not 0.0 <= mastery_threshold <= 1.0:
             raise ValueError("Mastery threshold must be between 0.0 and 1.0.")
+
+    def _require_topic(self, topic_id: str) -> TopicMetadata:
+        topic = self.get_topic(topic_id)
+        if topic is None:
+            raise ValueError(f"Unknown topic '{topic_id}'.")
+        return topic
 
     def _validate_topics(self) -> None:
         if len(self._topics_by_id) != len(self._topics):

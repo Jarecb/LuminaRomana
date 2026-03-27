@@ -110,6 +110,8 @@ Notes:
 - The placement blueprint currently defines coverage and intended difficulty ranges; question generation and scoring are still future-stage concerns.
 
 ## Stage 3: Adaptive Difficulty Engine
+Status: completed on 2026-03-27.
+
 Objective: implement score-based difficulty scaling and review logic.
 
 Deliverables:
@@ -123,6 +125,22 @@ Exit criteria:
 - Difficulty adjustments are deterministic and tested
 - Review sessions are triggered correctly
 - CEFR and prerequisite gating work under edge cases
+
+Implementation notes:
+- Added `app/services/difficulty.py` with a `DifficultyManager` that:
+  calculates rolling averages from the last three quiz scores, determines the next difficulty deterministically, and classifies the next session as `advance`, `hold`, or `review`
+- Implemented review-session planning that prioritizes prerequisite gaps and common recent mistake tags for targeted re-checks
+- Extended `ContentLibrary` with explicit topic-unlock and blocking-topic helpers so later-stage topic access, including B2, can be validated against prerequisite mastery
+- Wired the adaptive service into application bootstrap so it is available through the runtime container
+- Added Stage 3 coverage in:
+  `tests/test_difficulty.py`
+  `tests/test_roadmap.py`
+- Verified Stage 3 locally with:
+  `.\.venv\Scripts\python.exe -m pytest`
+
+Notes:
+- Difficulty changes use the spec's rolling-average approach with bounded one-step adjustments and an immediate review trigger for latest scores below 60 percent
+- Prompt constraints are now generated deterministically from learner performance, CEFR state, and prerequisite blocking so the later AI layer can consume stable adaptation signals
 
 ## Stage 4: AI Integration Layer
 Objective: connect the system to an LLM provider behind a stable interface.

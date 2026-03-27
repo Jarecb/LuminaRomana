@@ -1,8 +1,8 @@
 # Lumina Romana
 
-Lumina Romana is a Python application for learning Romanian through adaptive grammar lessons and validated AI-generated quizzes. The project combines a structured Romanian learning roadmap with AI-assisted content generation, local user progress tracking, and difficulty scaling based on quiz performance.
+Lumina Romana is a Python application for learning Romanian through adaptive grammar lessons and validated AI-generated quizzes. The project combines a structured Romanian learning roadmap with AI-assisted content generation, local user progress tracking, and deterministic difficulty scaling based on quiz performance.
 
-The repository currently includes the Stage 0 foundation, Stage 1 persistence work, and Stage 2 curriculum engine. The full product direction is defined in [spec.md](C:/Users/jarec/Dropbox/Python/LuminaRomana/spec.md), and the staged implementation roadmap is defined in [plan.md](C:/Users/jarec/Dropbox/Python/LuminaRomana/plan.md).
+The repository currently includes the Stage 0 foundation, Stage 1 persistence work, Stage 2 curriculum engine, and Stage 3 adaptive difficulty engine. The full product direction is defined in [spec.md](C:/Users/jarec/Dropbox/Python/LuminaRomana/spec.md), and the staged implementation roadmap is defined in [plan.md](C:/Users/jarec/Dropbox/Python/LuminaRomana/plan.md).
 
 ## Project Intent
 - Teach Romanian grammar progressively, starting from phonetics and basic verb usage
@@ -100,5 +100,7 @@ This repository now has:
 - Stage 2 curriculum metadata for Levels 1 through 10 mapped across A1, A2, B1, and B2
 - Prerequisite-aware topic selection and CEFR target-band lookup in `ContentLibrary`
 - A placement-test blueprint that samples the roadmap from A1 through B2
+- Stage 3 adaptive difficulty assessment with rolling score analysis, review-session planning, and prompt-constraint generation
+- Explicit topic gating helpers that prevent access to blocked later-stage content, including B2 content with weak B1 prerequisites
 
-Adaptive difficulty tuning, AI integration, validation, and the learner-facing lesson loop remain for later stages.
+AI integration, validation, and the learner-facing lesson loop remain for later stages.

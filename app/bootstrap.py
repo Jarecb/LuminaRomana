@@ -5,7 +5,7 @@ import logging
 
 from app.config import Settings
 from app.logging_config import configure_logging
-from app.services.roadmap import ContentLibrary
+from app.services import ContentLibrary, DifficultyManager
 from app.storage import (
     SQLiteLessonRepository,
     SQLiteQuizAttemptRepository,
@@ -28,6 +28,7 @@ class Application:
     logger: logging.Logger
     persistence: Persistence
     content_library: ContentLibrary
+    difficulty_manager: DifficultyManager
 
 
 def create_application() -> Application:
@@ -43,9 +44,11 @@ def create_application() -> Application:
         lessons=SQLiteLessonRepository(storage),
         quiz_attempts=SQLiteQuizAttemptRepository(storage),
     )
+    content_library = ContentLibrary()
     return Application(
         settings=settings,
         logger=logger,
         persistence=persistence,
-        content_library=ContentLibrary(),
+        content_library=content_library,
+        difficulty_manager=DifficultyManager(content_library),
     )
