@@ -2,6 +2,30 @@
 
 ## Full Product and Test Specification
 
+## Index
+- [1. Purpose](#1-purpose)
+- [2. Product Goals](#2-product-goals)
+- [2.1 Current Implementation Baseline](#21-current-implementation-baseline)
+- [3. Non-Goals](#3-non-goals)
+- [4. Target Users](#4-target-users)
+- [5. Core User Experience](#5-core-user-experience)
+- [6. Learning Roadmap](#6-learning-roadmap)
+- [7. Functional Requirements](#7-functional-requirements)
+- [8. AI Content Generation](#8-ai-content-generation)
+- [9. Content Validation Layer](#9-content-validation-layer)
+- [10. Adaptive Difficulty Model](#10-adaptive-difficulty-model)
+- [11. System Architecture](#11-system-architecture)
+- [12. Python Technical Requirements](#12-python-technical-requirements)
+- [13. Proposed Python Domain Model](#13-proposed-python-domain-model)
+- [14. Persistence Model](#14-persistence-model)
+- [15. AI Prompting Specification](#15-ai-prompting-specification)
+- [16. Test Specification](#16-test-specification)
+- [17. Error Handling](#17-error-handling)
+- [18. Security and Privacy](#18-security-and-privacy)
+- [19. Observability](#19-observability)
+- [20. Future Enhancements](#20-future-enhancements)
+- [21. Summary](#21-summary)
+
 ## 1. Purpose
 Lumina Romana is a Python-based Romanian language learning application focused on structured grammar instruction and adaptive assessment. The system combines curated learning progression with AI-generated lessons and quizzes. AI is used to produce lesson content at scale, but all generated questions must remain sensible, pedagogically useful, and validated before they reach the learner.
 
@@ -29,6 +53,8 @@ Completed plan stages as of 2026-03-27:
 - Stage 0: Foundation and project setup
 - Stage 1: Core domain model and local persistence
 - Stage 2: Roadmap and curriculum engine
+- Stage 3: Adaptive difficulty engine
+- Stage 4: AI integration layer
 
 This means the current baseline already includes:
 
@@ -37,8 +63,10 @@ This means the current baseline already includes:
 - Local SQLite persistence for users, mastery, skills, lesson history, and quiz attempts
 - A deterministic curriculum layer with Levels 1 through 10 mapped from A1 through B2
 - Prerequisite-aware topic progression and a placement-test blueprint spanning A1 through B2
+- Deterministic adaptive difficulty assessment, review-session planning, and prompt-constraint generation
+- A provider-agnostic AI service boundary with an OpenAI-compatible provider implementation, environment-based configuration, metadata logging, and transient retry handling
 
-Subsequent work defined in this specification must build on that baseline rather than re-specifying it as hypothetical.
+Subsequent work defined in this specification must build on that baseline rather than re-specifying it as hypothetical. In particular, Stage 5 validation work should now integrate with the existing AI service and prompt builder instead of inventing a new content-generation entrypoint.
 
 ## 3. Non-Goals
 - Full speech recognition in the first version

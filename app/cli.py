@@ -15,4 +15,9 @@ def main() -> int:
     print(f"Data directory: {app.settings.data_dir}")
     print(f"Database path: {app.settings.database_path}")
     print(f"Seed topics loaded: {len(app.content_library.all_topics())}")
+    print(
+        "AI provider: "
+        f"{app.ai_service.provider.provider_name} "
+        f"({app.ai_service.provider.model}, configured={app.ai_service.is_configured})"
+    )
     return 0
