@@ -14,12 +14,20 @@ def main(argv: Sequence[str] | None = None) -> int:
     subcommands = parser.add_subparsers(dest="command")
     subcommands.add_parser("serve", help="Run the browser-based learner interface.")
     subcommands.add_parser("status", help="Print configuration and runtime status.")
+    subcommands.add_parser("reset-progress", help="Reset the default learner's local progress for testing.")
     args = parser.parse_args(list(argv) if argv is not None else sys.argv[1:])
 
     app = create_application()
     command = args.command or "status"
     if command == "serve":
         run_dev_server(app)
+        return 0
+    if command == "reset-progress":
+        progress = app.learning_service.reset_progress()
+        print(f"Reset learner progress for {progress.user_id}.")
+        print("Current level: 1")
+        print("Current CEFR band: A1")
+        print("Current difficulty: 1")
         return 0
 
     app.logger.info("Loading %s diagnostics in %s mode", app.settings.app_name, app.settings.environment)

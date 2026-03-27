@@ -56,6 +56,7 @@ Completed plan stages as of 2026-03-27:
 - Stage 3: Adaptive difficulty engine
 - Stage 4: AI integration layer
 - Stage 5: Validation and fallback content
+- Stage 6: MVP learning loop
 
 This means the current baseline already includes:
 
@@ -67,6 +68,7 @@ This means the current baseline already includes:
 - Deterministic adaptive difficulty assessment, review-session planning, and prompt-constraint generation
 - A provider-agnostic AI service boundary with an OpenAI-compatible provider implementation, environment-based configuration, metadata logging, and transient retry handling
 - A validation layer that normalizes AI JSON into domain lessons, rejects off-scope or inconsistent content, retries with validation feedback, and falls back to curated templates for core A1-A2 topics
+- A Stage 6 learning loop with a default local learner profile, CLI support commands, server-rendered web pages, per-level introductions, persisted question-set results, and browser-based progress review
 
 Subsequent work defined in this specification must build on that baseline rather than re-specifying it as hypothetical. In particular, Stage 5 validation work should now integrate with the existing AI service and prompt builder instead of inventing a new content-generation entrypoint.
 
@@ -89,10 +91,11 @@ The learner starts with either:
 
 The learner then progresses through short lesson units. Each unit includes:
 
+- A pre-lesson explanation page describing the grammar principles for the level in plain English
 - A grammar explanation
 - Worked examples
 - Vocabulary support
-- A short quiz
+- A short quiz or question set
 
 After each quiz, the system updates mastery scores and decides whether to:
 
@@ -101,6 +104,8 @@ After each quiz, the system updates mastery scores and decides whether to:
 - Trigger a review session
 
 The long-term progression target is B2. The learner experience must therefore support not only isolated grammar drills, but also cumulative practice with reading, listening-ready text prompts, structured writing prompts, and multi-step grammar integration appropriate for upper-intermediate learners.
+
+For the current A1-A2 MVP loop, advancement through a roadmap topic should require repeated demonstrated control rather than a single strong attempt. The current baseline uses multiple question sets per topic and only advances after both the latest set and the running topic average meet the configured mastery threshold.
 
 ## 6. Learning Roadmap
 The app must teach Romanian in a controlled sequence. AI content generation must stay inside the current roadmap stage unless the adaptive engine explicitly advances the learner.
@@ -210,9 +215,11 @@ The application must provide a web-based GUI as a first-class interface.
 
 The web GUI must:
 
+- Show a pre-lesson level-introduction page that explains the grammar principles behind the topic before the learner starts a question set
 - Show the current lesson explanation, worked examples, and key grammar rules
 - Show quizzes and tests in an interactive form-based interface
 - Show answer explanations after submission or review
+- Show explicit explanations for wrong answers, not only the correct answer text
 - Show overall learner progress across completed lessons and roadmap levels
 - Show the learner's current CEFR estimate or competence band such as A1, A2, B1, or B2
 - Show topic mastery or equivalent progress indicators for the current roadmap position
@@ -255,6 +262,7 @@ Rules:
 - If a user scores above 90 percent on a quiz, the next test should introduce more complex sentence structures and slightly harder vocabulary.
 - If a user scores below 60 percent, the app must generate a review session focused on missed grammar rules before normal progression resumes.
 - Scores from 60 to 90 percent should generally keep difficulty stable, with limited novelty.
+- Topic advancement in the current MVP should require at least five completed question sets for the current topic, with the latest set scoring at least 80 percent and the average across all completed sets for that topic also at least 80 percent.
 - At B1 and B2 stages, adaptation must consider both grammar accuracy and ability to handle longer connected contexts.
 - The system must not advance a user into B2-target content if prerequisite B1 grammar mastery remains below a configured threshold.
 
@@ -265,6 +273,7 @@ A review session must:
 - Reuse the same grammar target with simpler examples
 - Include hints or partial scaffolding
 - Re-test mastery after review
+- Continue contributing to the running per-topic average used for topic advancement decisions
 
 ### 7.5 Placement Test
 The system should support an initial placement test that:
@@ -664,6 +673,8 @@ Unit tests must cover:
 - CEFR gating and prerequisite checks
 - Rubric scoring rules for guided writing items
 - Web progress view-model calculations and CEFR display formatting where such logic exists outside templates
+- Per-topic progression gating based on minimum completed set count plus latest-score and average-score thresholds
+- Pre-lesson explanation content generation for level introductions where that logic exists outside templates
 
 ### 16.2 Integration Tests
 Integration tests must cover:
@@ -672,9 +683,10 @@ Integration tests must cover:
 - Retry behavior after invalid AI output
 - Persistence of lesson and quiz results
 - Progress updates after completed quizzes
+- Multi-set topic progression where the learner does not advance until the minimum set count and average-score requirements are both satisfied
 - Placement into the correct CEFR band up to B2
 - Generation of integrated B1-B2 lessons without off-scope grammar leakage
-- Web GUI rendering of lesson explanations, quiz/test screens, answer explanations, and learner progress summaries
+- Web GUI rendering of level-introduction pages, lesson explanations, quiz/test screens, wrong-answer explanations, and learner progress summaries
 - End-to-end display of current competence band and roadmap progression in the web interface
 
 ### 16.3 Prompt and Content Quality Tests
@@ -697,7 +709,7 @@ The following acceptance criteria define a successful initial release:
 5. A score below 60 percent triggers a review session.
 6. User progress is persisted locally.
 7. At least the first four roadmap levels are supported.
-8. A web GUI displays lesson explanations, quizzes or tests, answer explanations, overall progress, and the current language competence band.
+8. A web GUI displays level introductions, lesson explanations, quizzes or tests, answer explanations including why wrong answers are wrong, overall progress, and the current language competence band.
 
 ### 16.5 Acceptance Tests for B2 Completion
 The following criteria define successful upper-intermediate support:
