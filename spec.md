@@ -21,6 +21,25 @@ The product is intended to teach Romanian grammar progressively, with specific a
 - Prevent low-quality or nonsensical AI output through structured validation.
 - Track progress, mastery, and review needs over time.
 
+## 2.1 Current Implementation Baseline
+The implementation must remain consistent with the staged delivery plan in `plan.md`.
+
+Completed plan stages as of 2026-03-27:
+
+- Stage 0: Foundation and project setup
+- Stage 1: Core domain model and local persistence
+- Stage 2: Roadmap and curriculum engine
+
+This means the current baseline already includes:
+
+- A Python project scaffold with package entrypoints, configuration loading, and logging
+- Dataclass-based domain models for lessons, questions, quiz attempts, and user progress
+- Local SQLite persistence for users, mastery, skills, lesson history, and quiz attempts
+- A deterministic curriculum layer with Levels 1 through 10 mapped from A1 through B2
+- Prerequisite-aware topic progression and a placement-test blueprint spanning A1 through B2
+
+Subsequent work defined in this specification must build on that baseline rather than re-specifying it as hypothetical.
+
 ## 3. Non-Goals
 - Full speech recognition in the first version
 - Open-ended free conversation tutoring as a core feature
@@ -155,6 +174,22 @@ Each lesson should contain:
 - `example_sentences`
 - `key_rules`
 - `quiz_questions`
+
+### 7.1.1 Web-Based GUI
+The application must provide a web-based GUI as a first-class interface.
+
+The web GUI must:
+
+- Show the current lesson explanation, worked examples, and key grammar rules
+- Show quizzes and tests in an interactive form-based interface
+- Show answer explanations after submission or review
+- Show overall learner progress across completed lessons and roadmap levels
+- Show the learner's current CEFR estimate or competence band such as A1, A2, B1, or B2
+- Show topic mastery or equivalent progress indicators for the current roadmap position
+- Support review of past lesson results and recent quiz performance
+- Be able to present placement-test sections and outcomes
+
+The web GUI should be usable on a standard desktop browser first. Mobile responsiveness is desirable, but desktop browser support is the minimum requirement.
 
 ### 7.2 Question Types
 The app must support at least these question types:
@@ -388,7 +423,7 @@ Suggested Python package layout:
 - AI layer for prompt building and provider integration
 - Validation layer for schema and quality checks
 - Storage layer for SQLite or file-based persistence
-- UI layer for CLI first, with room for later web or desktop clients
+- UI layer that includes a web-based GUI for learner interaction and may also retain a CLI for development or administration tasks
 
 ## 12. Python Technical Requirements
 
@@ -398,6 +433,7 @@ Suggested Python package layout:
 - Data models: `dataclasses` or `pydantic`
 - Storage: SQLite for local persistence, optionally JSON for seed content
 - HTTP client: `httpx` or equivalent
+- Web framework: a Python web framework suitable for server-rendered pages or APIs plus a browser-based frontend
 - Testing: `pytest`
 
 ### 12.2 AI Provider Support
@@ -548,6 +584,10 @@ Responsibility:
 - `achieved` boolean
 - `achieved_at` timestamp
 
+#### `ui_progress_snapshots`
+- optional cached view-model table or materialized projection for fast GUI loading
+- may include current topic, current CEFR band, mastery summary, recent scores, and progress percentages
+
 ## 15. AI Prompting Specification
 
 ### 15.1 System Prompt Requirements
@@ -586,6 +626,7 @@ Unit tests must cover:
 - Mapping from user performance to prompt constraints
 - CEFR gating and prerequisite checks
 - Rubric scoring rules for guided writing items
+- Web progress view-model calculations and CEFR display formatting where such logic exists outside templates
 
 ### 16.2 Integration Tests
 Integration tests must cover:
@@ -596,6 +637,8 @@ Integration tests must cover:
 - Progress updates after completed quizzes
 - Placement into the correct CEFR band up to B2
 - Generation of integrated B1-B2 lessons without off-scope grammar leakage
+- Web GUI rendering of lesson explanations, quiz/test screens, answer explanations, and learner progress summaries
+- End-to-end display of current competence band and roadmap progression in the web interface
 
 ### 16.3 Prompt and Content Quality Tests
 The system should include automated or semi-automated tests to verify:
@@ -617,6 +660,7 @@ The following acceptance criteria define a successful initial release:
 5. A score below 60 percent triggers a review session.
 6. User progress is persisted locally.
 7. At least the first four roadmap levels are supported.
+8. A web GUI displays lesson explanations, quizzes or tests, answer explanations, overall progress, and the current language competence band.
 
 ### 16.5 Acceptance Tests for B2 Completion
 The following criteria define successful upper-intermediate support:
@@ -658,7 +702,7 @@ The application should log:
 - Lesson generation success and retry counts
 
 ## 20. Future Enhancements
-- Web UI or desktop UI
+- Desktop UI in addition to the required web GUI
 - Audio pronunciation support
 - Spaced repetition scheduling
 - Curated human-authored lesson packs

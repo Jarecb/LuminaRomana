@@ -2,7 +2,7 @@
 
 Lumina Romana is a Python application for learning Romanian through adaptive grammar lessons and validated AI-generated quizzes. The project combines a structured Romanian learning roadmap with AI-assisted content generation, local user progress tracking, and difficulty scaling based on quiz performance.
 
-The repository currently includes the Stage 0 foundation and Stage 1 core domain and persistence work. The full product direction is defined in [spec.md](C:/Users/jarec/Dropbox/Python/LuminaRomana/spec.md), and the staged implementation roadmap is defined in [plan.md](C:/Users/jarec/Dropbox/Python/LuminaRomana/plan.md).
+The repository currently includes the Stage 0 foundation, Stage 1 persistence work, and Stage 2 curriculum engine. The full product direction is defined in [spec.md](C:/Users/jarec/Dropbox/Python/LuminaRomana/spec.md), and the staged implementation roadmap is defined in [plan.md](C:/Users/jarec/Dropbox/Python/LuminaRomana/plan.md).
 
 ## Project Intent
 - Teach Romanian grammar progressively, starting from phonetics and basic verb usage
@@ -16,7 +16,7 @@ The repository currently includes the Stage 0 foundation and Stage 1 core domain
 - `pyproject.toml`-based project setup
 - Local persistence with SQLite
 - Dataclass-based domain models for learner progress, lessons, questions, and quiz attempts
-- Seeded roadmap metadata for the initial A1-A2 learning path
+- Seeded roadmap metadata and curriculum selection from A1 through B2
 - Planned AI provider integration through an isolated service layer
 - Automated testing with `pytest`
 
@@ -97,6 +97,8 @@ This repository now has:
 - Stage 0 foundation and startup wiring
 - Stage 1 domain models for `UserProgress`, `Lesson`, `Question`, and `QuizAttempt`
 - SQLite repositories for user progress, lesson history, quiz attempts, mastery tracking, and skill scores
-- Seeded roadmap metadata for Levels 1 through 6
+- Stage 2 curriculum metadata for Levels 1 through 10 mapped across A1, A2, B1, and B2
+- Prerequisite-aware topic selection and CEFR target-band lookup in `ContentLibrary`
+- A placement-test blueprint that samples the roadmap from A1 through B2
 
-Adaptive progression logic, AI integration, validation, and the learner-facing lesson loop remain for later stages.
+Adaptive difficulty tuning, AI integration, validation, and the learner-facing lesson loop remain for later stages.

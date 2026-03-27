@@ -7,7 +7,7 @@ Implement the application in iterative stages so the project moves from a local 
 - Keep each stage independently testable
 - Build deterministic validation before depending heavily on AI
 - Deliver A1-A2 functionality first, then expand to B1-B2
-- Avoid premature UI complexity; prioritize domain logic and content quality
+- Build the browser-based learner experience after the curriculum and adaptive core are stable enough to support it
 
 ## Stage 0: Foundation and Project Setup
 Status: completed on 2026-03-27.
@@ -80,6 +80,8 @@ Notes:
 - Persistence is local-first and uses JSON serialization inside SQLite rows for lesson payloads while keeping mastery, skills, and attempts queryable in relational tables.
 
 ## Stage 2: Roadmap and Curriculum Engine
+Status: completed on 2026-03-27.
+
 Objective: encode the structured Romanian learning path and prerequisite graph.
 
 Deliverables:
@@ -93,6 +95,19 @@ Exit criteria:
 - The app can choose the next valid topic for a learner
 - The system can report current CEFR target band
 - Tests verify roadmap ordering and progression gating
+
+Implementation notes:
+- Expanded roadmap seed metadata in `app/models/roadmap.py` from the Stage 1 A1-A2 baseline to a full 10-level A1-B2 sequence aligned with the product spec
+- Added a placement test blueprint model and seeded A1, A2, B1, and B2 placement sections with topic coverage and target difficulty ranges
+- Extended `app/services/roadmap.py` so `ContentLibrary` now validates roadmap integrity and exposes:
+  `placement_blueprint()`, `target_cefr_band()`, `available_topics()`, and `next_topic_for_user()`
+- Implemented prerequisite-aware next-topic selection that returns blocking prerequisite topics before allowing later progression
+- Expanded `tests/test_roadmap.py` to cover CEFR mapping, progression gating, available-topic calculation, and placement blueprint coverage
+- Updated `README.md` to document the Stage 2 curriculum engine status and capabilities
+
+Notes:
+- Stage 2 focuses on deterministic curriculum decisions only. Score-based review logic and difficulty adaptation remain Stage 3 work.
+- The placement blueprint currently defines coverage and intended difficulty ranges; question generation and scoring are still future-stage concerns.
 
 ## Stage 3: Adaptive Difficulty Engine
 Objective: implement score-based difficulty scaling and review logic.
@@ -140,19 +155,26 @@ Exit criteria:
 - Integration tests cover retry and fallback behavior
 
 ## Stage 6: MVP Learning Loop
-Objective: deliver an end-to-end A1-A2 product loop.
+Objective: deliver an end-to-end A1-A2 product loop with a web-based learner interface.
 
 Deliverables:
 - Lesson delivery flow
 - Quiz flow
 - Review-session flow
-- Basic CLI interface
+- Web-based GUI for lessons, tests, explanations, and progress display
+- CLI retained only for development, diagnostics, or admin workflows
 - Local progress resume
 
 Exit criteria:
 - A new learner can start, complete lessons, take quizzes, and receive adaptive follow-up
 - Progress persists across sessions
+- The web GUI shows current lesson explanations, test items, answer explanations, overall progress, and the learner's current CEFR competence band
 - Acceptance criteria for the initial MVP are met
+
+Implementation guidance:
+- Reuse the existing domain, storage, and curriculum services rather than duplicating logic in the UI layer
+- Prefer a thin web layer that renders learner-facing views from application services and persistence-backed state
+- Include integration tests for browser-facing lesson, quiz, explanation, and progress pages
 
 ## Stage 7: B1 Expansion
 Objective: extend beyond beginner grammar into connected communication and narrative use.
@@ -178,6 +200,7 @@ Deliverables:
 - Add guided writing prompts with rubrics
 - Add discourse-marker and argumentation tasks
 - Add skill-level tracking for grammar, reading, and writing support
+- Extend the web GUI to present integrated B2 reading and writing workflows clearly
 
 Exit criteria:
 - The system can generate and validate B2-target lessons
@@ -204,13 +227,14 @@ Objective: make the application easy to run outside the development environment.
 
 Deliverables:
 - Finalize CLI commands
+- Finalize web application startup and deployment commands
 - Add environment example documentation
 - Add packaging instructions
-- Add optional executable packaging or containerization
-- Document local deployment and update flow
+- Add optional executable packaging or containerization for the web app
+- Document local deployment and update flow for both CLI support tooling and the web GUI
 
 Exit criteria:
-- A new user can install and run the app from documentation alone
+- A new user can install and run the app from documentation alone, including the web GUI
 - Configuration for AI provider keys is documented
 - The deploy path is repeatable
 
@@ -231,13 +255,13 @@ Validation is placed before heavy AI reliance on purpose. Without that sequencin
 
 ## Milestones
 - Milestone 1: project foundation plus persistence
-- Milestone 2: A1-A2 adaptive MVP
+- Milestone 2: A1-A2 adaptive MVP with web GUI
 - Milestone 3: B1 expansion
 - Milestone 4: B2 completion
 - Milestone 5: packaging and deployment readiness
 
 ## Immediate Next Steps
-1. Expand the roadmap seed from the Stage 1 A1-A2 baseline into the full A1-B2 curriculum graph.
-2. Add prerequisite-aware lesson selection and CEFR mapping logic.
-3. Introduce curriculum tests for ordering, progression gating, and next-topic selection.
-4. Decide whether roadmap metadata remains code-backed or moves into persisted seed content before Stage 2 grows further.
+1. Implement Stage 3 adaptive difficulty and review logic on top of the completed curriculum engine.
+2. Implement Stage 5 validation and fallback generation so AI-backed content is safe before learner delivery.
+3. Implement Stage 4 AI integration behind a provider-agnostic interface using the curriculum and adaptive signals already in place.
+4. Deliver Stage 6 with a web-based GUI that shows lessons, tests, explanations, learner progress, and current CEFR competence band.
