@@ -1,6 +1,19 @@
 [project]
-name = "pythonproject"
+name = "lumina-romana"
 version = "0.1.0"
-description = "Add your description here"
+description = "Adaptive Romanian grammar learning application scaffold."
+readme = "README.md"
 requires-python = ">=3.12"
 dependencies = []
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0,<9.0",
+]
+
+[project.scripts]
+lumina-romana = "app.cli:main"
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
