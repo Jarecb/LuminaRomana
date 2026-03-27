@@ -199,6 +199,8 @@ Notes:
 - The first provider implementation targets the OpenAI chat completions API; the service boundary is intentionally provider-agnostic so additional providers can be added later
 
 ## Stage 5: Validation and Fallback Content
+Status: completed on 2026-03-27.
+
 Objective: ensure AI output is safe enough to use.
 
 Deliverables:
@@ -212,6 +214,23 @@ Exit criteria:
 - Invalid AI output never reaches the learner
 - Core A1-A2 topics still work when AI output fails
 - Integration tests cover retry and fallback behavior
+
+Implementation notes:
+- Added a real validation layer under `app/validation/` with `ContentValidator`, structured validation issues, and payload-to-domain normalization so AI output must validate into a `Lesson` before it can be used
+- Implemented deterministic schema and sensibility checks for:
+  required fields, CEFR and level consistency, question structure, answer-option consistency, duplicate prompts, off-scope topic tags, and banned absurd vocabulary
+- Extended `AIService` so generation now:
+  validates provider JSON, retries with validation feedback in stricter prompts when output is rejected, and falls back to deterministic template lessons for core A1-A2 topics when AI generation remains unusable
+- Extended `ContentLibrary` with curated fallback lesson templates for Levels 1 through 6 so beginner and lower-intermediate topics remain available without AI
+- Added Stage 5 coverage in:
+  `tests/test_validation.py`
+  `tests/test_ai.py`
+- Verified Stage 5 locally with:
+  `.\.venv\Scripts\python.exe -m pytest`
+
+Notes:
+- Stage 5 now sits directly on top of the existing Stage 4 AI layer rather than creating a separate content-generation path
+- Unsupported fallback topics still surface generation failures explicitly, which keeps later B1-B2 lesson safety dependent on validated AI output until curated fallbacks are added
 
 ## Stage 6: MVP Learning Loop
 Objective: deliver an end-to-end A1-A2 product loop with a web-based learner interface.
@@ -320,7 +339,7 @@ Validation is placed before heavy AI reliance on purpose. Without that sequencin
 - Milestone 5: packaging and deployment readiness
 
 ## Immediate Next Steps
-1. Implement Stage 5 validation and fallback generation so AI-backed content is safe before learner delivery.
-2. Deliver Stage 6 with a web-based GUI that shows lessons, tests, explanations, learner progress, and current CEFR competence band.
-3. Extend the AI layer to support lesson orchestration flows once validation is in place.
-4. Add end-to-end generation tests that cover bootstrap, provider calls, validation, and persistence together.
+1. Deliver Stage 6 with a web-based GUI that shows lessons, tests, explanations, learner progress, and current CEFR competence band.
+2. Extend the AI layer to support lesson orchestration flows on top of the new validation and fallback gate.
+3. Add end-to-end generation tests that cover bootstrap, provider calls, validation, fallback behavior, and persistence together.
+4. Expand curated fallback coverage if B1-B2 offline or provider-disabled operation becomes a product requirement.

@@ -55,6 +55,7 @@ Completed plan stages as of 2026-03-27:
 - Stage 2: Roadmap and curriculum engine
 - Stage 3: Adaptive difficulty engine
 - Stage 4: AI integration layer
+- Stage 5: Validation and fallback content
 
 This means the current baseline already includes:
 
@@ -65,6 +66,7 @@ This means the current baseline already includes:
 - Prerequisite-aware topic progression and a placement-test blueprint spanning A1 through B2
 - Deterministic adaptive difficulty assessment, review-session planning, and prompt-constraint generation
 - A provider-agnostic AI service boundary with an OpenAI-compatible provider implementation, environment-based configuration, metadata logging, and transient retry handling
+- A validation layer that normalizes AI JSON into domain lessons, rejects off-scope or inconsistent content, retries with validation feedback, and falls back to curated templates for core A1-A2 topics
 
 Subsequent work defined in this specification must build on that baseline rather than re-specifying it as hypothetical. In particular, Stage 5 validation work should now integrate with the existing AI service and prompt builder instead of inventing a new content-generation entrypoint.
 
@@ -376,6 +378,13 @@ The validator must reject content if any of the following fail:
 - Topic tags do not match the requested lesson scope
 - Duplicate options exist where uniqueness is required
 - Sentences contain banned content or obviously irrelevant vocabulary
+
+Current implementation baseline:
+
+- Validation is performed inside the existing `AIService` flow before content is returned to callers
+- Accepted content is normalized into the `Lesson` domain model and only then exposed as learner-safe output
+- Rejected content triggers a retry with validation feedback embedded into the next prompt when retry budget remains
+- If retries are exhausted, curated fallback templates are used for the core A1-A2 roadmap topics
 
 ### 9.3 Optional Quality Checks
 Where feasible, the validator should also perform:
