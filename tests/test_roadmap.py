@@ -163,3 +163,16 @@ def test_fallback_lessons_can_draw_different_question_sets():
     second = library.build_fallback_lesson("nouns_and_articles", difficulty=3, question_count=5)
 
     assert [question.prompt for question in first.quiz_questions] != [question.prompt for question in second.quiz_questions]
+
+
+def test_b1_fallback_support_includes_integrated_tasks_and_vocab():
+    library = ContentLibrary()
+
+    lesson = library.build_fallback_lesson("narrative_b1_grammar", difficulty=7, question_count=5)
+    vocab = library.vocabulary_for_topic("narrative_b1_grammar")
+
+    assert lesson.cefr_band == CEFRBand.B1
+    assert len(lesson.example_sentences) >= 2
+    assert any(question.question_type.value == "sentence_transformation" for question in lesson.quiz_questions)
+    assert any(question.question_type.value == "dialogue_completion" for question in lesson.quiz_questions)
+    assert ("trebuie", "must / have to") in vocab

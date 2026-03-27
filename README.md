@@ -1,8 +1,8 @@
 # Lumina Romana
 
-Lumina Romana is a Python application for learning Romanian through adaptive grammar lessons and validated AI-generated quizzes. The project combines a structured Romanian learning roadmap with AI-assisted content generation, local user progress tracking, deterministic difficulty scaling based on quiz performance, a provider-backed AI integration layer, a validation-plus-fallback safety gate in front of learner-facing content, and a browser-based Stage 6 MVP learning loop.
+Lumina Romana is a Python application for learning Romanian through adaptive grammar lessons and validated AI-generated quizzes. The project combines a structured Romanian learning roadmap with AI-assisted content generation, local user progress tracking, deterministic difficulty scaling based on quiz performance, a provider-backed AI integration layer, a validation-plus-fallback safety gate in front of learner-facing content, and a browser-based Stage 7 learning loop with initial B1 support.
 
-The repository currently includes the Stage 0 foundation, Stage 1 persistence work, Stage 2 curriculum engine, Stage 3 adaptive difficulty engine, Stage 4 AI integration layer, Stage 5 validation and fallback content, and Stage 6 MVP lesson delivery in a web UI. The full product direction is defined in [spec.md](C:/Users/jarec/Dropbox/Python/LuminaRomana/spec.md), and the staged implementation roadmap is defined in [plan.md](C:/Users/jarec/Dropbox/Python/LuminaRomana/plan.md).
+The repository currently includes the Stage 0 foundation, Stage 1 persistence work, Stage 2 curriculum engine, Stage 3 adaptive difficulty engine, Stage 4 AI integration layer, Stage 5 validation and fallback content, Stage 6 MVP lesson delivery in a web UI, and Stage 7 B1 expansion. The full product direction is defined in [spec.md](C:/Users/jarec/Dropbox/Python/LuminaRomana/spec.md), and the staged implementation roadmap is defined in [plan.md](C:/Users/jarec/Dropbox/Python/LuminaRomana/plan.md).
 
 ## Index
 - [Project Intent](#project-intent)
@@ -34,7 +34,7 @@ The repository currently includes the Stage 0 foundation, Stage 1 persistence wo
 - Dataclass-based domain models for learner progress, lessons, questions, and quiz attempts
 - Seeded roadmap metadata and curriculum selection from A1 through B2
 - Provider-agnostic AI integration with prompt builders, retry handling, and an OpenAI-compatible provider implementation
-- Deterministic lesson validation, scope checking, and fallback lesson generation for core A1-A2 topics
+- Deterministic lesson validation, scope checking, and fallback lesson generation for core A1-A2 plus initial B1 topics
 - A server-rendered WSGI web interface for lesson delivery, quizzes, answer explanations, and progress tracking
 - Automated testing with `pytest`
 
@@ -137,6 +137,7 @@ Current browser flow:
 - Automatic resume of an unfinished lesson
 - Review-session generation after scores below 60 percent
 - Topic progression gated by at least five completed question sets, 80 percent or higher on the current set, and an 80 percent or higher average across all sets for the current topic
+- Initial B1-capable sessions with multi-sentence examples, sentence transformation tasks, and dialogue completion tasks when the learner reaches Levels 7 to 8
 
 The web layer is intentionally thin and reuses the existing persistence, roadmap, difficulty, AI, and validation services instead of duplicating business logic.
 
@@ -228,8 +229,8 @@ Notes:
 - API keys are loaded from environment variables only
 - Request and response metadata are logged without logging the API key
 - AI-generated lessons are now validated before they are returned from `AIService`
-- If AI output is invalid or the provider is unavailable, supported core topics fall back to deterministic template lessons
-- Later-stage topics without curated fallback templates still depend on validated AI output
+- If AI output is invalid or the provider is unavailable, supported beginner and initial B1 topics fall back to deterministic template lessons
+- Later-stage B2 topics without curated fallback templates still depend on validated AI output
 
 ## Development Notes
 - The implementation should follow the requirements in [spec.md](C:/Users/jarec/Dropbox/Python/LuminaRomana/spec.md)
@@ -245,11 +246,13 @@ This repository now has:
 - Stage 2 curriculum metadata for Levels 1 through 10 mapped across A1, A2, B1, and B2
 - Prerequisite-aware topic selection and CEFR target-band lookup in `ContentLibrary`
 - A placement-test blueprint that samples the roadmap from A1 through B2
+- Placement evaluation logic that can classify through B1 and recommend a starting topic
 - Stage 3 adaptive difficulty assessment with rolling score analysis, review-session planning, and prompt-constraint generation
 - Explicit topic gating helpers that prevent access to blocked later-stage content, including B2 content with weak B1 prerequisites
 - Stage 4 AI integration through `app.ai.AIService`, provider-backed JSON generation requests, prompt builders, transient retry handling, and metadata logging without secrets
 - Stage 5 validation through `app.validation.ContentValidator`, including schema-like checks, scope enforcement, answer consistency checks, and sensibility filtering
-- Stage 5 fallback lesson generation in `ContentLibrary` for the core A1-A2 roadmap topics when validated AI output is unavailable
+- Stage 5 and Stage 7 fallback lesson generation in `ContentLibrary` for the core A1-A2 roadmap topics plus initial B1 topics when validated AI output is unavailable
 - Stage 6 learner-session orchestration in `app.services.learning`, including level introductions, lesson resume, multi-set topic scoring, progress updates, mastery advancement, review-session routing, and CLI reset support
+- Stage 7 intermediate task support, including sentence transformation, dialogue completion, B1 multi-sentence examples, and integrated grammar skill tracking
 - Stage 6 browser-facing lesson, level-intro, quiz, explanation, and progress screens in `app.ui.web`
 - Stage 6 integration tests covering the browser flow and persistence-backed progress updates

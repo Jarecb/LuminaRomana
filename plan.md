@@ -279,6 +279,8 @@ Notes:
 - Pre-lesson pages now explain underlying Romanian grammar principles such as suffix articles like `-ul` and case-related forms such as `lui`, and wrong answers now include explicit reasons rather than only the correct-answer explanation
 
 ## Stage 7: B1 Expansion
+Status: completed on 2026-03-27.
+
 Objective: extend beyond beginner grammar into connected communication and narrative use.
 
 Deliverables:
@@ -292,6 +294,26 @@ Exit criteria:
 - The app can serve B1 lessons with coherent multi-step grammar tasks
 - Placement can classify at least through B1
 - Tests verify topic containment and increasing complexity
+
+Implementation notes:
+- Extended `ContentLibrary` fallback coverage and vocabulary constraints to include the initial B1 roadmap topics:
+  `narrative_b1_grammar` and `b1_b2_transition`
+- Added B1-safe deterministic lesson templates with:
+  multi-sentence worked examples, sentence transformation tasks, dialogue completion tasks, and practical narrative or functional contexts
+- Updated prompt construction in `app/ai/prompts.py` so B1-and-above generation requests explicitly require:
+  connected examples, at least one transformation or dialogue task, and practical intermediate vocabulary
+- Extended `ContentValidator` so Stage 7 task types can validate correctly without forcing closed-form option matching, while also adding:
+  B1 connected-context checks and minimum-context checks for integrated prompts
+- Expanded `LearningService` with placement evaluation through B1 and integrated grammar skill tracking derived from B1-style task types
+- Added Stage 7 coverage in:
+  `tests/test_ai.py`
+  `tests/test_learning.py`
+  `tests/test_roadmap.py`
+  `tests/test_validation.py`
+
+Notes:
+- Stage 7 currently provides deterministic fallback support for the initial B1 span and placement classification through B1, while B2 integrated reading and writing workflows remain Stage 8 work
+- Integrated mastery tracking is now reflected through `skill_scores`, especially `grammar` and `integrated_grammar`, so later-stage adaptation has a stable signal for connected grammar performance
 
 ## Stage 8: B2 Learning Features
 Objective: support upper-intermediate learning rather than only sentence-level drills.
