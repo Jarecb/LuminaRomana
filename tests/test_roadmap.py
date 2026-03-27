@@ -1,5 +1,6 @@
 from app.models import CEFRBand
 from app.services import ContentLibrary
+import random
 
 
 def test_content_library_exposes_seeded_topics():
@@ -142,3 +143,23 @@ def test_placement_blueprint_spans_a1_to_b2():
     ]
     assert all(section.question_count >= 10 for section in sections)
     assert "b2_consolidation" in sections[-1].topic_ids
+
+
+def test_fallback_question_pools_are_larger_than_one_question_set():
+    library = ContentLibrary()
+
+    lesson = library.build_fallback_lesson("romanian_basics", difficulty=2, question_count=5)
+
+    assert len({question.prompt for question in lesson.quiz_questions}) == 5
+    baseline_pool = {question.prompt for question in library.build_fallback_lesson("romanian_basics", difficulty=2, question_count=8).quiz_questions}
+    assert len(baseline_pool) >= 8
+
+
+def test_fallback_lessons_can_draw_different_question_sets():
+    library = ContentLibrary()
+    random.seed(1)
+    first = library.build_fallback_lesson("nouns_and_articles", difficulty=3, question_count=5)
+    random.seed(2)
+    second = library.build_fallback_lesson("nouns_and_articles", difficulty=3, question_count=5)
+
+    assert [question.prompt for question in first.quiz_questions] != [question.prompt for question in second.quiz_questions]

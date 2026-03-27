@@ -8,7 +8,7 @@ from pathlib import Path
 import sqlite3
 from typing import Iterator
 
-from app.models import CEFRBand, ExampleSentence, Lesson, Question, QuestionType, QuizAttempt, UserProgress
+from app.models import CEFRBand, ExampleSentence, Lesson, Question, QuestionType, QuizAttempt, UserProgress, WordbankEntry
 
 
 def _serialize_datetime(value: datetime | None) -> str | None:
@@ -143,6 +143,16 @@ class SQLiteStorage:
                     created_at TEXT NOT NULL,
                     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
                     FOREIGN KEY (lesson_id) REFERENCES lesson_history(lesson_id) ON DELETE CASCADE
+                );
+
+                CREATE TABLE IF NOT EXISTS wordbank (
+                    user_id TEXT NOT NULL,
+                    word TEXT NOT NULL,
+                    definition TEXT NOT NULL,
+                    topic TEXT NOT NULL,
+                    first_seen_at TEXT NOT NULL,
+                    PRIMARY KEY (user_id, word),
+                    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
                 );
                 """
             )
@@ -353,6 +363,67 @@ class SQLiteQuizAttemptRepository:
                 score_percent=row["score_percent"],
                 mistake_tags=list(json.loads(row["mistake_tags"])),
                 created_at=_deserialize_datetime(row["created_at"]) or datetime.now(),
+            )
+            for row in rows
+        ]
+
+
+@dataclass(slots=True)
+class SQLiteWordbankRepository:
+    storage: SQLiteStorage
+
+    def upsert(self, entry: WordbankEntry) -> None:
+        with self.storage.connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO wordbank (user_id, word, definition, topic, first_seen_at)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(user_id, word) DO UPDATE SET
+                    definition = excluded.definition,
+                    topic = excluded.topic
+                """,
+                (
+                    entry.user_id,
+                    entry.word,
+                    entry.definition,
+                    entry.topic,
+                    _serialize_datetime(entry.first_seen_at),
+                ),
+            )
+
+    def search_for_user(self, user_id: str, query: str = "", limit: int = 100) -> list[WordbankEntry]:
+        with self.storage.connection() as conn:
+            if query.strip():
+                pattern = f"%{query.strip().lower()}%"
+                rows = conn.execute(
+                    """
+                    SELECT *
+                    FROM wordbank
+                    WHERE user_id = ?
+                      AND (lower(word) LIKE ? OR lower(definition) LIKE ? OR lower(topic) LIKE ?)
+                    ORDER BY word ASC
+                    LIMIT ?
+                    """,
+                    (user_id, pattern, pattern, pattern, limit),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    """
+                    SELECT *
+                    FROM wordbank
+                    WHERE user_id = ?
+                    ORDER BY word ASC
+                    LIMIT ?
+                    """,
+                    (user_id, limit),
+                ).fetchall()
+        return [
+            WordbankEntry(
+                user_id=row["user_id"],
+                word=row["word"],
+                definition=row["definition"],
+                topic=row["topic"],
+                first_seen_at=_deserialize_datetime(row["first_seen_at"]) or datetime.now(),
             )
             for row in rows
         ]

@@ -94,6 +94,23 @@ class QuizAttempt:
 
 
 @dataclass(slots=True)
+class WordbankEntry:
+    user_id: str
+    word: str
+    definition: str
+    topic: str
+    first_seen_at: datetime = field(default_factory=utc_now)
+
+    def __post_init__(self) -> None:
+        if not self.word.strip():
+            raise ValueError("Wordbank entries require a word.")
+        if not self.definition.strip():
+            raise ValueError("Wordbank entries require a definition.")
+        if not self.topic.strip():
+            raise ValueError("Wordbank entries require a topic.")
+
+
+@dataclass(slots=True)
 class UserProgress:
     user_id: str
     current_level: int = 1

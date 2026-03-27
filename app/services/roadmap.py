@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+import random
 
 from app.models import (
     PLACEMENT_TEST_BLUEPRINT,
@@ -91,6 +92,31 @@ FALLBACK_LESSON_TEMPLATES: dict[str, FallbackLessonTemplate] = {
                 tags=("romanian_basics", "a_fi_present"),
                 hint="Start with 'I am'.",
             ),
+            FallbackQuestionTemplate(
+                prompt="Choose the correct Romanian form of 'you are' for one person.",
+                question_type=QuestionType.MULTIPLE_CHOICE,
+                options=("sunt", "esti", "este", "suntem"),
+                correct_answer="esti",
+                explanation="'Tu esti' means 'you are' for one person.",
+                tags=("romanian_basics", "a_fi_present"),
+                hint="Pick the second-person singular form.",
+            ),
+            FallbackQuestionTemplate(
+                prompt="Translate into Romanian: We are here.",
+                question_type=QuestionType.ENGLISH_TO_ROMANIAN,
+                correct_answer="Noi suntem aici.",
+                explanation="'Noi suntem aici.' uses the first-person plural form of 'a fi'.",
+                tags=("romanian_basics", "a_fi_present"),
+                hint="Start with 'Noi'.",
+            ),
+            FallbackQuestionTemplate(
+                prompt="Fill in the blank: El ___ acasa.",
+                question_type=QuestionType.FILL_IN_THE_BLANK,
+                correct_answer="este",
+                explanation="'El este acasa.' uses the third-person singular form of 'a fi'.",
+                tags=("romanian_basics", "a_fi_present"),
+                hint="Use the form that means 'is'.",
+            ),
         ),
     ),
     "nouns_and_articles": FallbackLessonTemplate(
@@ -145,6 +171,31 @@ FALLBACK_LESSON_TEMPLATES: dict[str, FallbackLessonTemplate] = {
                 explanation="Romanian attaches the article to the noun: 'cadou' becomes 'cadoul'.",
                 tags=("nouns_and_articles", "definite_articles"),
                 hint="Add the masculine singular definite ending.",
+            ),
+            FallbackQuestionTemplate(
+                prompt="Choose the correct form for 'the tree'.",
+                question_type=QuestionType.MULTIPLE_CHOICE,
+                options=("pom", "pomul", "pomi", "pomului"),
+                correct_answer="pomul",
+                explanation="'Pomul' is the masculine singular definite form meaning 'the tree'.",
+                tags=("nouns_and_articles", "definite_articles"),
+                hint="Look for the definite singular ending.",
+            ),
+            FallbackQuestionTemplate(
+                prompt="Translate into English: Baiatul citeste.",
+                question_type=QuestionType.ROMANIAN_TO_ENGLISH,
+                correct_answer="The boy is reading.",
+                explanation="'Baiatul' already includes the definite article, so it means 'the boy'.",
+                tags=("nouns_and_articles", "definite_articles"),
+                hint="Focus on the noun ending first.",
+            ),
+            FallbackQuestionTemplate(
+                prompt="Fill in the blank with the definite form: ___ este pe masa. Use 'manual'.",
+                question_type=QuestionType.FILL_IN_THE_BLANK,
+                correct_answer="manualul",
+                explanation="'Manualul' means 'the textbook' and shows the masculine definite ending '-ul'.",
+                tags=("nouns_and_articles", "definite_articles"),
+                hint="Add the attached definite article.",
             ),
         ),
     ),
@@ -201,6 +252,31 @@ FALLBACK_LESSON_TEMPLATES: dict[str, FallbackLessonTemplate] = {
                 tags=("core_cases", "dative"),
                 hint="Identify the receiver of the action.",
             ),
+            FallbackQuestionTemplate(
+                prompt="Choose the phrase that means 'to the teacher'.",
+                question_type=QuestionType.MULTIPLE_CHOICE,
+                options=("profesorul", "profesorului", "profesor", "pe profesor"),
+                correct_answer="profesorului",
+                explanation="'Profesorului' is the dative-style form used for 'to the teacher' in guided examples.",
+                tags=("core_cases", "dative"),
+                hint="Look for the form used with a receiver.",
+            ),
+            FallbackQuestionTemplate(
+                prompt="Translate into Romanian: The girl's book.",
+                question_type=QuestionType.ENGLISH_TO_ROMANIAN,
+                correct_answer="Cartea fetei.",
+                explanation="'Cartea fetei.' shows possession with the genitive-style form 'fetei'.",
+                tags=("core_cases", "genitive"),
+                hint="Start with 'Cartea'.",
+            ),
+            FallbackQuestionTemplate(
+                prompt="Fill in the blank: Ii dau scrisoarea ___ . Use 'mamei'.",
+                question_type=QuestionType.FILL_IN_THE_BLANK,
+                correct_answer="mamei",
+                explanation="'Mamei' marks the receiver, so it fits the giving pattern here.",
+                tags=("core_cases", "dative"),
+                hint="Use the form for 'to the mother'.",
+            ),
         ),
     ),
     "present_tense_verbs": FallbackLessonTemplate(
@@ -255,6 +331,31 @@ FALLBACK_LESSON_TEMPLATES: dict[str, FallbackLessonTemplate] = {
                 explanation="'Noi scriem' is the correct agreement pattern.",
                 tags=("present_tense_verbs", "agreement"),
                 hint="Look for the first-person plural form.",
+            ),
+            FallbackQuestionTemplate(
+                prompt="Choose the correct form: Ei ___ acolo.",
+                question_type=QuestionType.MULTIPLE_CHOICE,
+                options=("merg", "merge", "mergeti", "mergem"),
+                correct_answer="merg",
+                explanation="'Ei merg' is the correct third-person plural present form.",
+                tags=("present_tense_verbs", "agreement"),
+                hint="Pick the form for 'they'.",
+            ),
+            FallbackQuestionTemplate(
+                prompt="Translate into Romanian: She learns quickly.",
+                question_type=QuestionType.ENGLISH_TO_ROMANIAN,
+                correct_answer="Ea invata repede.",
+                explanation="'Ea invata repede.' matches the third-person singular subject with the correct verb form.",
+                tags=("present_tense_verbs", "present_tense"),
+                hint="Use the form for 'she'.",
+            ),
+            FallbackQuestionTemplate(
+                prompt="Fill in the blank: Tu ___ romana foarte bine.",
+                question_type=QuestionType.FILL_IN_THE_BLANK,
+                correct_answer="vorbesti",
+                explanation="'Tu vorbesti' uses the second-person singular ending.",
+                tags=("present_tense_verbs", "agreement"),
+                hint="Use the form for one person being addressed.",
             ),
         ),
     ),
@@ -311,6 +412,31 @@ FALLBACK_LESSON_TEMPLATES: dict[str, FallbackLessonTemplate] = {
                 tags=("pronouns_and_tenses", "perfect_compound"),
                 hint="Use the auxiliary for a past completed action.",
             ),
+            FallbackQuestionTemplate(
+                prompt="Translate into English: Il chem maine.",
+                question_type=QuestionType.ROMANIAN_TO_ENGLISH,
+                correct_answer="I will call him tomorrow.",
+                explanation="'Il' replaces a masculine direct object, so the sentence means 'I will call him tomorrow.'",
+                tags=("pronouns_and_tenses", "object_pronouns"),
+                hint="Start with the object pronoun.",
+            ),
+            FallbackQuestionTemplate(
+                prompt="Choose the correct auxiliary: Noi ___ ajuns deja.",
+                question_type=QuestionType.MULTIPLE_CHOICE,
+                options=("am", "ati", "au", "ai"),
+                correct_answer="am",
+                explanation="In learner-safe perfect compound patterns, 'Noi am ajuns' is the expected form.",
+                tags=("pronouns_and_tenses", "perfect_compound"),
+                hint="Use the common auxiliary used before the participle.",
+            ),
+            FallbackQuestionTemplate(
+                prompt="Fill in the blank: O ___ vad mai tarziu. Use the near-future helper.",
+                question_type=QuestionType.FILL_IN_THE_BLANK,
+                correct_answer="sa",
+                explanation="'O sa vad' is the common near-future pattern.",
+                tags=("pronouns_and_tenses", "future"),
+                hint="Use the short future helper after 'o'.",
+            ),
         ),
     ),
     "connected_communication": FallbackLessonTemplate(
@@ -366,7 +492,114 @@ FALLBACK_LESSON_TEMPLATES: dict[str, FallbackLessonTemplate] = {
                 tags=("connected_communication", "imperative"),
                 hint="Look for the command form.",
             ),
+            FallbackQuestionTemplate(
+                prompt="Choose the best word for 'after that'.",
+                question_type=QuestionType.MULTIPLE_CHOICE,
+                options=("mereu", "dupa aceea", "acum", "deja"),
+                correct_answer="dupa aceea",
+                explanation="'Dupa aceea' is a common sequencing phrase meaning 'after that'.",
+                tags=("connected_communication", "sequencing"),
+                hint="Pick the phrase that links the next action.",
+            ),
+            FallbackQuestionTemplate(
+                prompt="Fill in the blank: Scrie mai ___, te rog.",
+                question_type=QuestionType.FILL_IN_THE_BLANK,
+                correct_answer="clar",
+                explanation="'Mai clar' means 'more clearly' and fits an instruction with comparison.",
+                tags=("connected_communication", "adverbs", "comparisons"),
+                hint="Use an adverb that means 'clearly'.",
+            ),
+            FallbackQuestionTemplate(
+                prompt="Translate into Romanian: First we eat, then we leave.",
+                question_type=QuestionType.ENGLISH_TO_ROMANIAN,
+                correct_answer="Mai intai mancam, apoi plecam.",
+                explanation="'Mai intai ... apoi ...' is a standard way to sequence everyday actions.",
+                tags=("connected_communication", "sequencing"),
+                hint="Use the sequencing pair from the lesson examples.",
+            ),
         ),
+    ),
+}
+
+TOPIC_VOCABULARY: dict[str, tuple[tuple[str, str], ...]] = {
+    "romanian_basics": (
+        ("buna", "hello"),
+        ("eu", "I"),
+        ("tu", "you"),
+        ("el", "he"),
+        ("noi", "we"),
+        ("sunt", "am / are"),
+        ("esti", "are for one person addressed"),
+        ("este", "is"),
+        ("suntem", "are for we"),
+        ("aici", "here"),
+        ("student", "student"),
+    ),
+    "nouns_and_articles": (
+        ("baiat", "boy"),
+        ("baiatul", "the boy"),
+        ("casa", "house / the house in this beginner pattern"),
+        ("cadou", "gift"),
+        ("cadoul", "the gift"),
+        ("pom", "tree"),
+        ("pomul", "the tree"),
+        ("manual", "textbook"),
+        ("manualul", "the textbook"),
+        ("mare", "big"),
+        ("nou", "new"),
+    ),
+    "core_cases": (
+        ("cartea", "the book"),
+        ("baiatului", "to the boy / of the boy"),
+        ("fetei", "to the girl / of the girl"),
+        ("copilului", "to the child"),
+        ("mamei", "to the mother"),
+        ("vad", "I see"),
+        ("dau", "I give"),
+        ("apa", "water"),
+        ("floarea", "the flower"),
+        ("scrisoarea", "the letter"),
+        ("lui", "of / to him in common beginner patterns"),
+    ),
+    "present_tense_verbs": (
+        ("invat", "I learn / study"),
+        ("invata", "he or she learns"),
+        ("vorbesti", "you speak"),
+        ("merg", "they go / I go depending on subject"),
+        ("mergem", "we go"),
+        ("scriem", "we write"),
+        ("citesti", "you read"),
+        ("lucreaza", "they work / he works in common beginner spelling"),
+        ("repede", "quickly"),
+        ("romana", "Romanian"),
+        ("acasa", "home"),
+    ),
+    "pronouns_and_tenses": (
+        ("il", "him"),
+        ("o", "her / it"),
+        ("am", "have, used as a perfect tense helper"),
+        ("sa", "to, used in future patterns after 'o'"),
+        ("plecat", "left / gone"),
+        ("sun", "I call"),
+        ("maine", "tomorrow"),
+        ("deja", "already"),
+        ("ne", "us / each other"),
+        ("vedem", "we see / we see each other"),
+        ("diseara", "this evening"),
+    ),
+    "connected_communication": (
+        ("mai intai", "first"),
+        ("apoi", "then"),
+        ("dupa aceea", "after that"),
+        ("vorbeste", "speak"),
+        ("incet", "slowly"),
+        ("te rog", "please"),
+        ("mai repede", "faster / more quickly"),
+        ("vino", "come"),
+        ("aici", "here"),
+        ("acum", "now"),
+        ("deschide", "open"),
+        ("usa", "the door"),
     ),
 }
 
@@ -395,6 +628,10 @@ class ContentLibrary:
     def placement_blueprint(self) -> tuple[PlacementTestSection, ...]:
         return self._placement_blueprint
 
+    def vocabulary_for_topic(self, topic_id: str) -> tuple[tuple[str, str], ...]:
+        self._require_topic(topic_id)
+        return TOPIC_VOCABULARY.get(topic_id, ())
+
     def supports_fallback(self, topic_id: str) -> bool:
         return topic_id in FALLBACK_LESSON_TEMPLATES
 
@@ -411,16 +648,13 @@ class ContentLibrary:
         if template is None:
             raise ValueError(f"No fallback template is available for topic '{topic_id}'.")
         normalized_difficulty = max(1, min(10, difficulty))
+        selected_templates = self._select_fallback_questions(template.questions, question_count)
         questions: list[Question] = []
-        for index in range(question_count):
-            base = template.questions[index % len(template.questions)]
-            variant = index // len(template.questions)
-            suffix = f"-v{variant + 1}" if variant else ""
-            prompt_suffix = f" Variant {variant + 1}." if variant else ""
+        for index, base in enumerate(selected_templates, start=1):
             questions.append(
                 Question(
-                    question_id=f"fallback-{topic_id}-q{index + 1}{suffix}",
-                    prompt=f"{base.prompt}{prompt_suffix}",
+                    question_id=f"fallback-{topic_id}-q{index}",
+                    prompt=base.prompt,
                     question_type=base.question_type,
                     difficulty_rating=normalized_difficulty,
                     cefr_band=topic.cefr_band,
@@ -443,6 +677,18 @@ class ContentLibrary:
             key_rules=list(template.key_rules),
             quiz_questions=questions,
         )
+
+    def _select_fallback_questions(
+        self,
+        templates: tuple[FallbackQuestionTemplate, ...],
+        question_count: int,
+    ) -> list[FallbackQuestionTemplate]:
+        if question_count <= len(templates):
+            return random.sample(list(templates), question_count)
+        selected = list(templates)
+        while len(selected) < question_count:
+            selected.extend(random.sample(list(templates), len(templates)))
+        return selected[:question_count]
 
     def target_cefr_band(self, level: int) -> CEFRBand:
         if level < 1:

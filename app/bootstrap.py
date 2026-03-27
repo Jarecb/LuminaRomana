@@ -13,6 +13,7 @@ from app.storage import (
     SQLiteQuizAttemptRepository,
     SQLiteStorage,
     SQLiteUserProgressRepository,
+    SQLiteWordbankRepository,
 )
 from app.validation import ContentValidator
 
@@ -23,6 +24,7 @@ class Persistence:
     user_progress: SQLiteUserProgressRepository
     lessons: SQLiteLessonRepository
     quiz_attempts: SQLiteQuizAttemptRepository
+    wordbank: SQLiteWordbankRepository
 
 
 @dataclass(slots=True)
@@ -48,6 +50,7 @@ def create_application() -> Application:
         user_progress=SQLiteUserProgressRepository(storage),
         lessons=SQLiteLessonRepository(storage),
         quiz_attempts=SQLiteQuizAttemptRepository(storage),
+        wordbank=SQLiteWordbankRepository(storage),
     )
     content_library = ContentLibrary()
     difficulty_manager = DifficultyManager(content_library)
@@ -79,6 +82,7 @@ def create_application() -> Application:
         user_progress_repository=persistence.user_progress,
         lesson_repository=persistence.lessons,
         quiz_attempt_repository=persistence.quiz_attempts,
+        wordbank_repository=persistence.wordbank,
         content_library=content_library,
         difficulty_manager=difficulty_manager,
         ai_service=ai_service,
