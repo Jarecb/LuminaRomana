@@ -23,7 +23,7 @@ class AISettings:
     max_retries: int = 2
 
     @property
-    def configured(self) -> bool:
+    def is_configured(self) -> bool:
         return self.enabled and bool(self.api_key)
 
 

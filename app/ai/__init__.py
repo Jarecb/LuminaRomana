@@ -1,37 +1,26 @@
-"""AI integration layer."""
+from __future__ import annotations
 
-from app.ai.prompts import LessonPromptBuilder, PromptBuilder, SystemPromptBuilder
-from app.ai.providers import BaseAIProvider, DisabledAIProvider, OpenAIChatProvider
-from app.ai.service import AIService
-from app.ai.types import (
-    AIConfigurationError,
-    AIError,
-    AIMessage,
-    AIProviderError,
-    AIProviderResponse,
-    LessonGenerationRequest,
-    LessonGenerationError,
-    LessonGenerationResult,
-    PromptPackage,
-    TransientAIError,
+# Import from the service module
+from app.ai.service import AIService, AIServiceMetricsSnapshot
+
+# Import from the prompts module
+from app.ai.prompts import PromptBuilder
+
+# Import the providers from the providers module
+from app.ai.providers import (
+    BaseAIProvider,
+    AIChatProvider,
+    GeminiAIProvider,  # This was likely missing
+    DisabledAIProvider,
 )
 
+# Explicitly define what is available for "from app.ai import *"
 __all__ = [
-    "AIConfigurationError",
-    "AIError",
-    "AIMessage",
-    "AIProviderError",
-    "AIProviderResponse",
     "AIService",
-    "BaseAIProvider",
-    "DisabledAIProvider",
-    "LessonGenerationRequest",
-    "LessonGenerationError",
-    "LessonGenerationResult",
-    "LessonPromptBuilder",
-    "OpenAIChatProvider",
+    "AIServiceMetricsSnapshot",
     "PromptBuilder",
-    "PromptPackage",
-    "SystemPromptBuilder",
-    "TransientAIError",
+    "BaseAIProvider",
+    "AIChatProvider",
+    "GeminiAIProvider",
+    "DisabledAIProvider",
 ]

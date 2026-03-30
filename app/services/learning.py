@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import logging
+import re
+import traceback
 from collections.abc import Mapping
 from dataclasses import dataclass
 from statistics import mean
-import re
 from uuid import uuid4
 
 from app.ai.service import AIService
@@ -14,11 +16,9 @@ from app.storage import LessonRepository, QuizAttemptRepository, UserProgressRep
 from .difficulty import DifficultyManager, SessionAction
 from .roadmap import ContentLibrary
 
-
 DEFAULT_USER_ID = "default-learner"
 PASSING_SCORE = 80.0
 MIN_ATTEMPTS_TO_ADVANCE = 5
-
 
 LEVEL_PRINCIPLES: dict[str, tuple[str, ...]] = {
     "romanian_basics": (
@@ -170,15 +170,15 @@ class PlacementOutcome:
 
 class LearningService:
     def __init__(
-        self,
-        *,
-        user_progress_repository: UserProgressRepository,
-        lesson_repository: LessonRepository,
-        quiz_attempt_repository: QuizAttemptRepository,
-        wordbank_repository: WordbankRepository,
-        content_library: ContentLibrary,
-        difficulty_manager: DifficultyManager,
-        ai_service: AIService,
+            self,
+            *,
+            user_progress_repository: UserProgressRepository,
+            lesson_repository: LessonRepository,
+            quiz_attempt_repository: QuizAttemptRepository,
+            wordbank_repository: WordbankRepository,
+            content_library: ContentLibrary,
+            difficulty_manager: DifficultyManager,
+            ai_service: AIService,
     ) -> None:
         self.user_progress_repository = user_progress_repository
         self.lesson_repository = lesson_repository
@@ -202,11 +202,11 @@ class LearningService:
         return progress
 
     def set_testing_position(
-        self,
-        *,
-        level: int,
-        user_id: str = DEFAULT_USER_ID,
-        difficulty: int | None = None,
+            self,
+            *,
+            level: int,
+            user_id: str = DEFAULT_USER_ID,
+            difficulty: int | None = None,
     ) -> UserProgress:
         topics = self.content_library.all_topics()
         if level < 1 or level > len(topics):
@@ -227,6 +227,7 @@ class LearningService:
         for topic in topics:
             if topic.level < level:
                 progress.update_mastery(topic.topic_id, self.difficulty_manager.b2_prerequisite_threshold)
+
         if target_topic.cefr_band == CEFRBand.B2:
             progress.update_skill_score("grammar", 85.0)
             progress.update_skill_score("integrated_grammar", 82.0)
@@ -235,6 +236,7 @@ class LearningService:
         elif target_topic.cefr_band == CEFRBand.B1:
             progress.update_skill_score("grammar", 80.0)
             progress.update_skill_score("integrated_grammar", 78.0)
+
         self.user_progress_repository.save(progress)
         return progress
 
@@ -244,14 +246,17 @@ class LearningService:
         recent_lessons = tuple(self.lesson_repository.list_for_user(user_id, limit=6))
         recent_attempts = tuple(self.quiz_attempt_repository.list_for_user(user_id, limit=6))
         next_topic = self.content_library.next_topic_for_user(progress)
+
         current_topic_summary = None
         if next_topic is not None:
             current_topic_summary = self.topic_attempt_summary(user_id, next_topic.topic_id)
+
         recommended_action = "advance"
         if current_topic_summary is not None and not current_topic_summary.topic_passed and current_topic_summary.attempts > 0:
             recommended_action = "hold" if current_topic_summary.page_passed else "review"
         elif progress.recent_scores and progress.recent_scores[-1] < PASSING_SCORE:
             recommended_action = "review"
+
         return DashboardData(
             user_progress=progress,
             next_topic=next_topic,
@@ -314,40 +319,64 @@ class LearningService:
         )
 
     def start_topic_lesson(
-        self,
-        topic_id: str,
-        *,
-        user_id: str = DEFAULT_USER_ID,
-        session_goal_override: str | None = None,
+            self,
+            topic_id: str,
+            *,
+            user_id: str = DEFAULT_USER_ID,
+            session_goal_override: str | None = None,
     ) -> LessonSession:
-        progress = self.get_or_create_user_progress(user_id)
-        topic = self.content_library.get_topic(topic_id)
-        if topic is None:
-            raise ValueError(f"Unknown topic '{topic_id}'.")
+        """
+        Generates a new lesson for a specific topic with explicit logging.
+        """
+        print(f"\n[DEBUG] LearningService.start_topic_lesson: Starting for {topic_id}", flush=True)
 
-        session_goal = session_goal_override or self._infer_session_goal(user_id, topic_id)
-        focus_tags = self._topic_focus_tags(user_id, topic_id)
-        result = self.ai_service.generate_lesson(
-            LessonGenerationRequest(
-                user_progress=progress,
-                topic_id=topic_id,
-                session_goal=session_goal,
-                focus_tags=focus_tags,
+        try:
+            progress = self.get_or_create_user_progress(user_id)
+            topic = self.content_library.get_topic(topic_id)
+            if topic is None:
+                print(f"[DEBUG] LearningService: Topic {topic_id} not found.", flush=True)
+                raise ValueError(f"Unknown topic '{topic_id}'.")
+
+            session_goal = session_goal_override or self._infer_session_goal(user_id, topic_id)
+            focus_tags = self._topic_focus_tags(user_id, topic_id)
+
+            print(f"[DEBUG] LearningService: Requesting AI generation via AIService...", flush=True)
+
+            result = self.ai_service.generate_lesson(
+                LessonGenerationRequest(
+                    user_progress=progress,
+                    topic_id=topic_id,
+                    session_goal=session_goal,
+                    focus_tags=focus_tags,
+                )
             )
-        )
-        lesson = result.lesson
-        if session_goal == "practice" and not self._is_practice_lesson(lesson):
-            lesson.lesson_id = f"practice-{topic_id}-{uuid4()}"
-        self.lesson_repository.save(user_id, lesson)
-        return LessonSession(
-            page_kind="lesson",
-            topic=topic,
-            session_goal=session_goal,
-            resumed=False,
-            source=result.source,
-            lesson=lesson,
-            warnings=result.warnings,
-        )
+
+            lesson = result.lesson
+            if session_goal == "practice" and not self._is_practice_lesson(lesson):
+                lesson.lesson_id = f"practice-{topic_id}-{uuid4()}"
+
+            self.lesson_repository.save(user_id, lesson)
+            print(f"[DEBUG] LearningService: Session successfully created.", flush=True)
+
+            return LessonSession(
+                page_kind="lesson",
+                topic=topic,
+                session_goal=session_goal,
+                resumed=False,
+                source=result.source,
+                lesson=lesson,
+                warnings=result.warnings,
+            )
+
+        except Exception as e:
+            print("\n" + "!" * 60)
+            print(f"FATAL ERROR IN LearningService.start_topic_lesson")
+            print(f"Error Type: {type(e).__name__}")
+            print(f"Message: {str(e)}")
+            print("-" * 60)
+            traceback.print_exc()
+            print("!" * 60 + "\n")
+            raise
 
     def build_level_intro(self, user_id: str, topic_id: str) -> LevelIntro:
         topic = self.content_library.get_topic(topic_id)
@@ -389,8 +418,8 @@ class LearningService:
         rationale = [f"{section.title}: {normalized_scores[section.section_id]:.1f}%" for section in blueprint]
 
         if (
-            normalized_scores.get("placement_b2_integrated_control", 0.0) >= 70.0
-            and normalized_scores.get("placement_b1_functional_range", 0.0) >= 70.0
+                normalized_scores.get("placement_b2_integrated_control", 0.0) >= 70.0
+                and normalized_scores.get("placement_b1_functional_range", 0.0) >= 70.0
         ):
             suggested_level = 9
         elif normalized_scores.get("placement_b1_functional_range", 0.0) >= 70.0:
@@ -420,9 +449,9 @@ class LearningService:
         average_score = mean(attempt.score_percent for attempt in topic_attempts)
         page_passed = latest_score >= PASSING_SCORE
         topic_passed = (
-            len(topic_attempts) >= MIN_ATTEMPTS_TO_ADVANCE
-            and page_passed
-            and average_score >= PASSING_SCORE
+                len(topic_attempts) >= MIN_ATTEMPTS_TO_ADVANCE
+                and page_passed
+                and average_score >= PASSING_SCORE
         )
         return TopicAttemptSummary(
             topic_id=topic_id,
@@ -434,11 +463,11 @@ class LearningService:
         )
 
     def submit_quiz(
-        self,
-        lesson_id: str,
-        answers: dict[str, str],
-        *,
-        user_id: str = DEFAULT_USER_ID,
+            self,
+            lesson_id: str,
+            answers: dict[str, str],
+            *,
+            user_id: str = DEFAULT_USER_ID,
     ) -> QuizResult:
         lesson = self.lesson_repository.get(lesson_id)
         if lesson is None:
@@ -447,9 +476,11 @@ class LearningService:
         progress = self.get_or_create_user_progress(user_id)
         practice_mode = self._is_practice_lesson(lesson)
         prior_topic_summary = self.topic_attempt_summary(user_id, lesson.topic) if practice_mode else None
+
         feedback: list[QuestionFeedback] = []
         mistake_tags: list[str] = []
         correct_answers = 0
+
         for question in lesson.quiz_questions:
             submitted_answer = answers.get(question.question_id, "").strip()
             is_correct = self._answers_match(question.correct_answer, submitted_answer)
@@ -477,6 +508,7 @@ class LearningService:
 
         total_questions = len(lesson.quiz_questions)
         score_percent = round((correct_answers / total_questions) * 100.0, 2) if total_questions else 0.0
+
         attempt = QuizAttempt(
             attempt_id=str(uuid4()),
             user_id=user_id,
@@ -496,6 +528,7 @@ class LearningService:
                 page_passed=False,
                 topic_passed=False,
             )
+
         if topic_summary is None:
             raise ValueError("Topic attempt summary was not available after saving an attempt.")
 
@@ -504,7 +537,8 @@ class LearningService:
             progress.current_level = max(progress.current_level, lesson.level)
             if topic_summary.topic_passed:
                 progress.update_mastery(lesson.topic, topic_summary.average_score / 100.0)
-                progress.current_level = min(len(self.content_library.all_topics()), max(progress.current_level, lesson.level + 1))
+                progress.current_level = min(len(self.content_library.all_topics()),
+                                             max(progress.current_level, lesson.level + 1))
             else:
                 progress.update_mastery(
                     lesson.topic,
@@ -519,6 +553,7 @@ class LearningService:
             action = "advance" if topic_summary.topic_passed else ("hold" if topic_summary.page_passed else "review")
         else:
             action = "practice"
+
         return QuizResult(
             lesson=lesson,
             score_percent=score_percent,
@@ -625,9 +660,9 @@ class LearningService:
             progress.update_skill_score(skill_name, blended)
 
     def _roadmap_entries(
-        self,
-        progress: UserProgress,
-        next_topic: TopicMetadata | None,
+            self,
+            progress: UserProgress,
+            next_topic: TopicMetadata | None,
     ) -> tuple[RoadmapProgressEntry, ...]:
         entries: list[RoadmapProgressEntry] = []
         for topic in self.content_library.all_topics():

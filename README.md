@@ -227,7 +227,7 @@ $env:LUMINA_ROMANA_AI_MAX_RETRIES = "2"
 Variable behavior:
 
 - `LUMINA_ROMANA_AI_ENABLED`: enables or disables AI calls explicitly
-- `LUMINA_ROMANA_AI_PROVIDER`: currently supports `openai`
+- `LUMINA_ROMANA_AI_PROVIDER`: currently supports `openai` and `gemini`
 - `LUMINA_ROMANA_AI_MODEL`: model name sent to the provider
 - `LUMINA_ROMANA_AI_API_KEY`: bearer token for the AI provider
 - `LUMINA_ROMANA_AI_BASE_URL`: base URL for OpenAI or any compatible endpoint

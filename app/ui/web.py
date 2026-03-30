@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import traceback
 from dataclasses import dataclass
 from html import escape
 from io import BytesIO
@@ -17,7 +18,6 @@ from app.services.learning import (
     QuizResult,
 )
 
-
 HTMLResponse = tuple[str, list[tuple[str, str]], bytes]
 
 
@@ -27,69 +27,84 @@ class WebApp:
     learning_service: LearningService
 
     def __call__(self, environ: dict, start_response: Callable) -> list[bytes]:
-        method = environ.get("REQUEST_METHOD", "GET").upper()
-        path = environ.get("PATH_INFO", "/") or "/"
-        if method == "GET" and path == "/":
-            response = self._html_response(self._render_dashboard())
-        elif method == "POST" and path == "/sessions/start":
-            session = self.learning_service.start_or_resume_session(DEFAULT_USER_ID)
-            response = self._redirect(self._session_location(session))
-        elif method == "GET" and path.startswith("/levels/"):
-            level_path = path.removeprefix("/levels/")
-            if level_path.endswith("/revision"):
-                topic_id = level_path.removesuffix("/revision")
-                response = self._html_response(self._render_level_revision(topic_id))
-            else:
-                topic_id = level_path
-                response = self._html_response(self._render_level_intro(topic_id))
-        elif method == "POST" and path.startswith("/levels/") and path.endswith("/begin"):
-            topic_id = path.removeprefix("/levels/").removesuffix("/begin")
-            session = LessonSession(
-                page_kind="revision",
-                topic=self.learning_service.build_level_revision(DEFAULT_USER_ID, topic_id).topic,
-                session_goal=self.learning_service.build_level_revision(DEFAULT_USER_ID, topic_id).session_goal,
-                resumed=False,
-                source="system",
-                level_revision=self.learning_service.build_level_revision(DEFAULT_USER_ID, topic_id),
-            )
-            response = self._redirect(self._session_location(session))
-        elif method == "POST" and path.startswith("/levels/") and path.endswith("/practice"):
-            topic_id = path.removeprefix("/levels/").removesuffix("/practice")
-            session = self.learning_service.start_topic_lesson(topic_id, user_id=DEFAULT_USER_ID)
-            response = self._redirect(self._session_location(session))
-        elif method == "GET" and path == "/wordbank":
-            query = parse_qs(environ.get("QUERY_STRING", "")).get("q", [""])[-1]
-            response = self._html_response(self._render_wordbank(query))
-        elif method == "GET" and path == "/progress":
-            response = self._html_response(self._render_progress())
-        elif method == "POST" and path == "/progress/revisit":
-            form_data = self._parse_form_data(environ)
-            topic_id = form_data.get("topic_id", [""])[-1]
-            session = self.learning_service.start_topic_lesson(
-                topic_id,
-                user_id=DEFAULT_USER_ID,
-                session_goal_override="practice",
-            )
-            response = self._redirect(self._session_location(session))
-        elif method == "GET" and path.startswith("/lessons/"):
-            lesson_id = path.removeprefix("/lessons/")
-            response = self._html_response(self._render_lesson(lesson_id))
-        elif method == "POST" and path.startswith("/lessons/") and path.endswith("/submit"):
-            lesson_id = path.removeprefix("/lessons/").removesuffix("/submit")
-            form_data = self._parse_form_data(environ)
-            answers = {
-                key.removeprefix("answer_"): values[-1]
-                for key, values in form_data.items()
-                if key.startswith("answer_")
-            }
-            result = self.learning_service.submit_quiz(lesson_id, answers, user_id=DEFAULT_USER_ID)
-            response = self._html_response(self._render_result(result))
-        else:
-            response = self._html_response(self._render_not_found(), status="404 Not Found")
+        try:
+            method = environ.get("REQUEST_METHOD", "GET").upper()
+            path = environ.get("PATH_INFO", "/") or "/"
 
-        status, headers, body = response
-        start_response(status, headers)
-        return [body]
+            if method == "GET" and path == "/":
+                response = self._html_response(self._render_dashboard())
+            elif method == "POST" and path == "/sessions/start":
+                session = self.learning_service.start_or_resume_session(DEFAULT_USER_ID)
+                response = self._redirect(self._session_location(session))
+            elif method == "GET" and path.startswith("/levels/"):
+                level_path = path.removeprefix("/levels/")
+                if level_path.endswith("/revision"):
+                    topic_id = level_path.removesuffix("/revision")
+                    response = self._html_response(self._render_level_revision(topic_id))
+                else:
+                    topic_id = level_path
+                    response = self._html_response(self._render_level_intro(topic_id))
+            elif method == "POST" and path.startswith("/levels/") and path.endswith("/begin"):
+                topic_id = path.removeprefix("/levels/").removesuffix("/begin")
+                # Using the original double-call logic from your source
+                session = LessonSession(
+                    page_kind="revision",
+                    topic=self.learning_service.build_level_revision(DEFAULT_USER_ID, topic_id).topic,
+                    session_goal=self.learning_service.build_level_revision(DEFAULT_USER_ID, topic_id).session_goal,
+                    resumed=False,
+                    source="system",
+                    level_revision=self.learning_service.build_level_revision(DEFAULT_USER_ID, topic_id),
+                )
+                response = self._redirect(self._session_location(session))
+            elif method == "POST" and path.startswith("/levels/") and path.endswith("/practice"):
+                topic_id = path.removeprefix("/levels/").removesuffix("/practice")
+                session = self.learning_service.start_topic_lesson(topic_id, user_id=DEFAULT_USER_ID)
+                response = self._redirect(self._session_location(session))
+            elif method == "GET" and path == "/wordbank":
+                query = parse_qs(environ.get("QUERY_STRING", "")).get("q", [""])[-1]
+                response = self._html_response(self._render_wordbank(query))
+            elif method == "GET" and path == "/progress":
+                response = self._html_response(self._render_progress())
+            elif method == "POST" and path == "/progress/revisit":
+                form_data = self._parse_form_data(environ)
+                topic_id = form_data.get("topic_id", [""])[-1]
+                session = self.learning_service.start_topic_lesson(
+                    topic_id,
+                    user_id=DEFAULT_USER_ID,
+                    session_goal_override="practice",
+                )
+                response = self._redirect(self._session_location(session))
+            elif method == "GET" and path.startswith("/lessons/"):
+                lesson_id = path.removeprefix("/lessons/")
+                response = self._html_response(self._render_lesson(lesson_id))
+            elif method == "POST" and path.startswith("/lessons/") and path.endswith("/submit"):
+                lesson_id = path.removeprefix("/lessons/").removesuffix("/submit")
+                form_data = self._parse_form_data(environ)
+                answers = {
+                    key.removeprefix("answer_"): values[-1]
+                    for key, values in form_data.items()
+                    if key.startswith("answer_")
+                }
+                result = self.learning_service.submit_quiz(lesson_id, answers, user_id=DEFAULT_USER_ID)
+                response = self._html_response(self._render_result(result))
+            else:
+                response = self._html_response(self._render_not_found(), status="404 Not Found")
+
+            status, headers, body = response
+            start_response(status, headers)
+            return [body]
+
+        except Exception as e:
+            # This will force the error to appear in your terminal
+            print("\n" + "=" * 80)
+            print("SERVER ERROR DETECTED")
+            print("=" * 80)
+            traceback.print_exc()
+            print("=" * 80 + "\n")
+
+            # Simple fallback response so the browser doesn't just hang/reset
+            start_response("500 Internal Server Error", [("Content-Type", "text/plain")])
+            return [f"Internal Server Error:\n{str(e)}".encode("utf-8")]
 
     def _parse_form_data(self, environ: dict) -> dict[str, list[str]]:
         body_size = int(environ.get("CONTENT_LENGTH") or 0)
@@ -102,6 +117,8 @@ class WebApp:
         if session.page_kind == "revision":
             return f"/levels/{session.topic.topic_id}/revision"
         if session.lesson is None:
+            # Added log for debugging the 'rollback' behavior
+            print(f"[DEBUG] _session_location: session.lesson is None for page_kind '{session.page_kind}'")
             raise ValueError("Lesson session did not include a lesson.")
         return f"/lessons/{session.lesson.lesson_id}"
 
@@ -389,12 +406,12 @@ class WebApp:
         rubric_markup = ""
         if question.rubric:
             rubric_markup = (
-                "<div class='rubric'><strong>Scoring focus</strong><ul>"
-                + "".join(
-                    f"<li><strong>{escape(name.replace('_', ' ').title())}</strong>: {escape(description)}</li>"
-                    for name, description in question.rubric.items()
-                )
-                + "</ul></div>"
+                    "<div class='rubric'><strong>Scoring focus</strong><ul>"
+                    + "".join(
+                f"<li><strong>{escape(name.replace('_', ' ').title())}</strong>: {escape(description)}</li>"
+                for name, description in question.rubric.items()
+            )
+                    + "</ul></div>"
             )
         if options:
             fields = "".join(
