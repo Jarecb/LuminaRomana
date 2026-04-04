@@ -342,6 +342,13 @@ class ContentValidator:
                         message="Prompt references dialogue or a reply but does not include the actual dialogue context.",
                     )
                 )
+            if self._references_sentence_context(question.prompt) and not self._has_sentence_context(question.prompt):
+                issues.append(
+                    ValidationIssue(
+                        path=f"quiz_questions[{index}].prompt",
+                        message="Prompt references a sentence but does not include the actual sentence context.",
+                    )
+                )
             if question.question_type in {QuestionType.SENTENCE_TRANSFORMATION, QuestionType.DIALOGUE_COMPLETION}:
                 if len(question.prompt.split()) < 6:
                     issues.append(
@@ -453,6 +460,20 @@ class ContentValidator:
             return True
         # Allow simple speaker-turn formatting like "A: ... B: ..."
         return prompt.count(":") >= 2 and "___" in prompt
+
+    def _references_sentence_context(self, prompt: str) -> bool:
+        lowered = prompt.casefold()
+        return "sentence" in lowered and any(
+            marker in lowered for marker in ("complete the sentence", "rewrite the sentence", "transform the sentence")
+        )
+
+    def _has_sentence_context(self, prompt: str) -> bool:
+        single_quotes = prompt.count("'")
+        double_quotes = prompt.count('"')
+        if single_quotes >= 2 or double_quotes >= 2:
+            return True
+        # Allow direct blanked sentence patterns without quote marks.
+        return "___" in prompt and prompt.count(":") >= 1 and len(prompt.split()) >= 8
 
     def _require_non_empty_string(self, value: Any, path: str, issues: list[ValidationIssue]) -> None:
         if not isinstance(value, str) or not value.strip():

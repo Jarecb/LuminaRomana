@@ -44,8 +44,12 @@ class LessonPromptBuilder:
         return (
             "Generate one Romanian grammar lesson and quiz as structured JSON with the exact top-level keys: "
             "lesson_id, topic, level, cefr_band, difficulty, explanation_text, example_sentences, key_rules, quiz_questions. "
+            "The top-level values for topic, level, and cefr_band must exactly match the requested topic id, level, and CEFR band provided below. "
+            "Do not substitute another topic id, another CEFR band, or a generic placeholder. "
             "Each example_sentences item must have romanian and english. "
             "Each quiz_questions item must include question_id, type, prompt, options, correct_answer, explanation, difficulty, tags, hint, rubric, and cefr_band. "
+            "Rubric must always be a JSON object. Use {} for non-guided-writing questions; only guided_writing items should have non-empty rubric criteria. "
+            "Every question tags list must include the current topic id or one of the topic grammar-focus tags, and must not use tags from unrelated roadmap topics. "
             f"Topic id: {topic.topic_id}. "
             f"Topic title: {topic.title}. "
             f"Level: {topic.level}. "

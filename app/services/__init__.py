@@ -1,5 +1,11 @@
 from app.services.difficulty import DifficultyAssessment, DifficultyManager, PromptConstraints, ReviewSession, SessionAction
-from app.services.quality import ContentQualityReport, ContentSample, QualityService
+from app.services.quality import (
+    ContentQualityReport,
+    ContentSample,
+    OfflineQuestionSeedReport,
+    OfflineQuestionSeedResult,
+    QualityService,
+)
 from app.services.roadmap import ContentLibrary
 
 __all__ = [
@@ -8,6 +14,8 @@ __all__ = [
     "ContentSample",
     "DifficultyAssessment",
     "DifficultyManager",
+    "OfflineQuestionSeedReport",
+    "OfflineQuestionSeedResult",
     "PromptConstraints",
     "QualityService",
     "ReviewSession",

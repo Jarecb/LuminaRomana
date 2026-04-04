@@ -8,13 +8,17 @@ from app.ai import AIProviderResponse, AIService, LessonGenerationRequest, Promp
 from app.ai.providers import DisabledAIProvider
 from app.models import CEFRBand, UserProgress
 from app.services import ContentLibrary, DifficultyManager, QualityService
+from app.storage import SQLiteOfflineQuestionRepository, SQLiteStorage
 from app.validation import ContentValidator
 
 from tests.test_ai import StubProvider
 
 
-def test_quality_service_samples_requested_topics():
-    content_library = ContentLibrary()
+def test_quality_service_samples_requested_topics(tmp_path):
+    storage = SQLiteStorage(tmp_path / "lumina_romana.db")
+    storage.initialize()
+    offline_repository = SQLiteOfflineQuestionRepository(storage)
+    content_library = ContentLibrary(offline_question_repository=offline_repository)
     ai_service = AIService(
         provider=DisabledAIProvider(),
         prompt_builder=PromptBuilder(),
@@ -23,8 +27,13 @@ def test_quality_service_samples_requested_topics():
         content_validator=ContentValidator(),
         logger=logging.getLogger("test.quality"),
         max_retries=1,
+        offline_question_repository=offline_repository,
     )
-    quality_service = QualityService(content_library=content_library, ai_service=ai_service)
+    quality_service = QualityService(
+        content_library=content_library,
+        ai_service=ai_service,
+        offline_question_repository=offline_repository,
+    )
 
     report = quality_service.sample_lessons(
         topic_ids=("romanian_basics", "b2_core_structures"),
@@ -35,8 +44,42 @@ def test_quality_service_samples_requested_topics():
     assert report.fallback_samples == 2
     assert report.ai_samples == 0
     assert report.samples[0].topic_id == "romanian_basics"
-    assert "multiple_choice" in report.samples[0].question_types
+    assert len(report.samples[0].question_types) == 5
     assert any(question_type == "guided_writing" for question_type in report.samples[1].question_types)
+
+
+def test_quality_service_seeds_offline_questions_for_requested_topics(tmp_path):
+    storage = SQLiteStorage(tmp_path / "lumina_romana.db")
+    storage.initialize()
+    offline_repository = SQLiteOfflineQuestionRepository(storage)
+    content_library = ContentLibrary(offline_question_repository=offline_repository)
+    ai_service = AIService(
+        provider=DisabledAIProvider(),
+        prompt_builder=PromptBuilder(),
+        content_library=content_library,
+        difficulty_manager=DifficultyManager(content_library),
+        content_validator=ContentValidator(),
+        logger=logging.getLogger("test.quality.seed"),
+        max_retries=1,
+        offline_question_repository=offline_repository,
+    )
+    quality_service = QualityService(
+        content_library=content_library,
+        ai_service=ai_service,
+        offline_question_repository=offline_repository,
+    )
+
+    report = quality_service.seed_offline_question_bank(
+        topic_ids=("romanian_basics",),
+        question_count=10,
+    )
+
+    assert report.total_topics == 1
+    assert report.total_questions_after == offline_repository.count_all()
+    assert report.topics[0].topic_id == "romanian_basics"
+    assert report.topics[0].stored_question_count_after == offline_repository.count_for_topic("romanian_basics")
+    assert report.topics[0].stored_question_count_after >= 1
+    assert report.topics[0].warnings
 
 
 def test_ai_service_metrics_capture_retries_validation_failures_and_fallback():

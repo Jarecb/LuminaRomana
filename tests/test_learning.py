@@ -374,3 +374,39 @@ def test_start_or_resume_lesson_session_skips_saved_lesson_with_missing_dialogue
 
     assert session.lesson is not None
     assert session.lesson.lesson_id != "broken-lesson"
+
+
+def test_start_or_resume_lesson_session_skips_saved_lesson_with_missing_sentence_context(tmp_path):
+    service = build_learning_service(tmp_path)
+    progress = service.get_or_create_user_progress()
+    service.user_progress_repository.save(progress)
+    broken_lesson = Lesson(
+        lesson_id="broken-sentence-lesson",
+        topic="romanian_basics",
+        level=1,
+        cefr_band=CEFRBand.A1,
+        difficulty=2,
+        explanation_text="Broken saved lesson.",
+        example_sentences=[],
+        key_rules=["Use a fi."],
+        quiz_questions=[
+            Question(
+                question_id="q-broken-sentence",
+                prompt="Complete the sentence with the correct form of a fi.",
+                question_type=QuestionType.MULTIPLE_CHOICE,
+                difficulty_rating=2,
+                cefr_band=CEFRBand.A1,
+                correct_answer="este, suntem",
+                explanation="Needs the actual sentence to be answerable.",
+                tags=["romanian_basics", "a_fi_present"],
+                options=["este, suntem", "sunt, sunt", "esti, sunteti", "suntem, este"],
+                hint="Look at both subjects.",
+            )
+        ],
+    )
+    service.lesson_repository.save("default-learner", broken_lesson)
+
+    session = service.start_or_resume_lesson_session()
+
+    assert session.lesson is not None
+    assert session.lesson.lesson_id != "broken-sentence-lesson"

@@ -48,7 +48,7 @@ The product is intended to teach Romanian grammar progressively, with specific a
 ## 2.1 Current Implementation Baseline
 The implementation must remain consistent with the staged delivery plan in `plan.md`.
 
-Completed plan stages as of 2026-03-27:
+Completed plan stages as of 2026-04-04:
 
 - Stage 0: Foundation and project setup
 - Stage 1: Core domain model and local persistence
@@ -57,6 +57,10 @@ Completed plan stages as of 2026-03-27:
 - Stage 4: AI integration layer
 - Stage 5: Validation and fallback content
 - Stage 6: MVP learning loop
+- Stage 7: B1 expansion
+- Stage 8: B2 learning features
+- Stage 9: Quality hardening
+- Stage 10: Packaging and deployment
 
 This means the current baseline already includes:
 
@@ -67,8 +71,13 @@ This means the current baseline already includes:
 - Prerequisite-aware topic progression and a placement-test blueprint spanning A1 through B2
 - Deterministic adaptive difficulty assessment, review-session planning, and prompt-constraint generation
 - A provider-agnostic AI service boundary with an OpenAI-compatible provider implementation, environment-based configuration, metadata logging, and transient retry handling
-- A validation layer that normalizes AI JSON into domain lessons, rejects off-scope or inconsistent content, retries with validation feedback, and falls back to curated templates for core A1-A2 topics
-- A Stage 6 learning loop with a default local learner profile, CLI support commands, server-rendered web pages, per-level introductions, persisted question-set results, and browser-based progress review
+- A validation layer that normalizes AI JSON into domain lessons, rejects off-scope or inconsistent content, retries with validation feedback, and falls back to curated templates for the supported A1-B2 roadmap topics
+- A browser-based learning loop with a default local learner profile, CLI support commands, server-rendered web pages, per-level introductions, persisted question-set results, wordbank browsing, practice replay, and browser-based progress review
+- Gemini support plus OpenAI-compatible provider support, including Copilot-style endpoints via provider aliasing
+- Archival of validated AI-generated questions into a persistent offline question bank that expands the local fallback pool over time
+- CLI maintenance flows for the offline question bank, including full-bank clearing and A1-B2 top-up seeding
+- Stage 9 AI-quality metrics, prompt regression coverage, and a content-sampling workflow
+- Stage 10 packaging and deployment assets including build metadata, a Windows startup script, and optional containerization
 
 Subsequent work defined in this specification must build on that baseline rather than re-specifying it as hypothetical. In particular, Stage 5 validation work should now integrate with the existing AI service and prompt builder instead of inventing a new content-generation entrypoint.
 
@@ -393,7 +402,9 @@ Current implementation baseline:
 - Validation is performed inside the existing `AIService` flow before content is returned to callers
 - Accepted content is normalized into the `Lesson` domain model and only then exposed as learner-safe output
 - Rejected content triggers a retry with validation feedback embedded into the next prompt when retry budget remains
-- If retries are exhausted, curated fallback templates are used for the core A1-A2 roadmap topics
+- If retries are exhausted, curated fallback templates plus archived offline AI questions are used for the supported A1-B2 roadmap topics
+- Administrative CLI support can clear the archived offline bank entirely or seed it across the roadmap, targeting ten archived questions per topic by default
+- Prompts that claim to be dialogue or reply tasks without including actual dialogue context are rejected
 
 ### 9.3 Optional Quality Checks
 Where feasible, the validator should also perform:
@@ -476,10 +487,10 @@ Suggested Python package layout:
 ### 12.1 Stack
 - Language: Python 3.12+
 - Packaging: `pyproject.toml`
-- Data models: `dataclasses` or `pydantic`
-- Storage: SQLite for local persistence, optionally JSON for seed content
-- HTTP client: `httpx` or equivalent
-- Web framework: a Python web framework suitable for server-rendered pages or APIs plus a browser-based frontend
+- Data models: `dataclasses`
+- Storage: SQLite for local persistence plus in-code seed content for roadmap and fallback data
+- HTTP client: Python standard library `urllib`
+- Web framework: current implementation uses a server-rendered WSGI app built on the Python standard library
 - Testing: `pytest`
 
 ### 12.2 AI Provider Support
@@ -582,11 +593,12 @@ Responsibility:
 - Lessons served
 - Quiz attempts
 - Mastery by topic
-- Review recommendations
-- CEFR progression checkpoints
-- Open-response scoring records
+- Skill scores
+- Wordbank entries
+- Archived offline AI-generated questions
+- Offline-question-bank maintenance state such as total archived-question counts, which are surfaced through the `status` CLI output
 
-### 14.2 Suggested SQLite Schema
+### 14.2 Current SQLite Schema Shape
 
 #### `users`
 - `id` UUID primary key
@@ -600,7 +612,6 @@ Responsibility:
 - `user_id` UUID
 - `topic` text
 - `proficiency_score` real
-- `last_updated` timestamp
 
 #### `lesson_history`
 - `lesson_id` text
@@ -622,17 +633,31 @@ Responsibility:
 - `user_id` UUID
 - `skill_name` text
 - `score` real
-- `last_updated` timestamp
 
-#### `cefr_checkpoints`
+#### `wordbank`
 - `user_id` UUID
-- `cefr_band` text
-- `achieved` boolean
-- `achieved_at` timestamp
+- `word` text
+- `definition` text
+- `topic` text
+- `first_seen_at` timestamp
 
-#### `ui_progress_snapshots`
-- optional cached view-model table or materialized projection for fast GUI loading
-- may include current topic, current CEFR band, mastery summary, recent scores, and progress percentages
+#### `offline_question_bank`
+- `fingerprint` text primary key
+- `topic` text
+- `prompt` text
+- `question_type` text
+- `difficulty_rating` integer
+- `cefr_band` text
+- `correct_answer` text
+- `explanation` text
+- `tags` JSON text
+- `options` JSON text
+- `hint` text nullable
+- `rubric` JSON text
+- `provider_name` text nullable
+- `model` text nullable
+- `created_at` timestamp
+- `last_seen_at` timestamp
 
 ## 15. AI Prompting Specification
 

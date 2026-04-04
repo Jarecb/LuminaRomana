@@ -584,3 +584,15 @@ class SQLiteOfflineQuestionRepository:
                 (topic_id,),
             ).fetchone()
         return int(row["question_count"]) if row is not None else 0
+
+    def count_all(self) -> int:
+        with self.storage.connection() as conn:
+            row = conn.execute(
+                "SELECT COUNT(*) AS question_count FROM offline_question_bank",
+            ).fetchone()
+        return int(row["question_count"]) if row is not None else 0
+
+    def delete_all(self) -> int:
+        with self.storage.connection() as conn:
+            cursor = conn.execute("DELETE FROM offline_question_bank")
+        return int(cursor.rowcount if cursor.rowcount is not None else 0)

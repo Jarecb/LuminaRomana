@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
-import traceback
+import time
 from dataclasses import dataclass, replace
 from typing import Sequence
 
@@ -14,6 +14,7 @@ from app.ai.types import (
     LessonGenerationError,
     LessonGenerationRequest,
     LessonGenerationResult,
+    QuotaExceededAIError,
     TransientAIError,
 )
 from app.services.difficulty import DifficultyManager
@@ -63,6 +64,8 @@ class AIService:
         self.logger = logger
         self.offline_question_repository = offline_question_repository
         self.max_retries = max(0, max_retries_per_provider)
+        self._provider_cooldowns_until: dict[str, float] = {}
+        self._provider_cooldown_reasons: dict[str, str] = {}
         self._metrics = {
             "total_requests": 0,
             "successful_generations": 0,
@@ -90,18 +93,21 @@ class AIService:
         return AIServiceMetricsSnapshot(**self._metrics)
 
     def generate_lesson(self, request: LessonGenerationRequest) -> LessonGenerationResult:
-        # If this doesn't print, the crash is happening in the caller (main.py/cli.py/routes.py)
-        print(f"\n[SERVICE] Entry point reached for topic: {request.topic_id}", flush=True)
-
         try:
             topic = self.content_library.get_topic(request.topic_id)
             if topic is None:
-                print(f"[SERVICE] Error: Topic {request.topic_id} not found.", flush=True)
                 raise ValueError(f"Unknown topic '{request.topic_id}'.")
 
             if not self.providers:
-                print("[SERVICE] No configured providers found.", flush=True)
                 return self._trigger_fallback(request, None, "No AI providers are configured.")
+
+            available_providers = [provider for provider in self.providers if self._provider_is_available(provider)]
+            if not available_providers:
+                return self._trigger_fallback(
+                    request,
+                    None,
+                    self._provider_unavailable_reason_text() or "Configured AI providers are temporarily unavailable.",
+                )
 
             self._metrics["total_requests"] += 1
 
@@ -116,17 +122,16 @@ class AIService:
 
             failure_reasons: list[str] = []
 
-            for provider in self.providers:
+            for provider in available_providers:
                 current_request = request
                 max_attempts = self.max_retries + 1
 
                 for attempt in range(1, max_attempts + 1):
-                    print(f"[SERVICE] Calling {provider.provider_name} (Attempt {attempt})...", flush=True)
                     prompt = self.prompt_builder.build_lesson_prompt(current_request, topic, assessment, constraints)
 
                     try:
                         response = provider.generate_json(prompt.messages, temperature=current_request.temperature)
-                        payload = json.loads(response.content)
+                        payload = self._normalize_provider_payload(json.loads(response.content))
 
                         lesson = self.content_validator.validate_lesson_payload(
                             payload,
@@ -141,7 +146,6 @@ class AIService:
                         )
 
                         self._metrics["successful_generations"] += 1
-                        print(f"[SERVICE] Success with {provider.provider_name}", flush=True)
                         return LessonGenerationResult(
                             lesson=lesson,
                             lesson_payload=lesson_to_payload(lesson),
@@ -155,13 +159,23 @@ class AIService:
                             completion_tokens=response.completion_tokens,
                         )
 
+                    except QuotaExceededAIError as exc:
+                        self._update_failure_metrics(exc)
+                        self._mark_provider_cooldown(provider, exc)
+                        error_msg = (
+                            f"Provider quota exhausted via {provider.provider_name}: {str(exc)} "
+                            f"(provider={provider.provider_name})"
+                        )
+                        self.logger.warning(error_msg)
+                        failure_reasons.append(f"[{provider.provider_name}] {str(exc)}")
+                        break
+
                     except (TransientAIError, json.JSONDecodeError, ContentValidationError) as exc:
                         error_msg = (
                             f"Attempt {attempt} via {provider.provider_name} failed: {str(exc)} "
                             f"(provider={provider.provider_name})"
                         )
                         self.logger.warning(error_msg)
-                        print(f"[SERVICE] {error_msg}", flush=True)
 
                         self._update_failure_metrics(exc)
                         failure_reasons.append(f"[{provider.provider_name}] {str(exc)}")
@@ -171,11 +185,17 @@ class AIService:
                             current_request = replace(current_request, strict_validation=True,
                                                       validation_feedback=feedback)
 
+                    except AIProviderError as exc:
+                        self._metrics["provider_failures"] += 1
+                        error_msg = f"Provider error via {provider.provider_name}: {str(exc)}"
+                        self.logger.warning(error_msg)
+                        failure_reasons.append(f"[{provider.provider_name}] {str(exc)}")
+                        break
+
                     except Exception as exc:
                         self._metrics["provider_failures"] += 1
-                        error_detail = f"Critical Provider Error ({provider.provider_name}): {str(exc)}"
-                        print(f"[SERVICE] {error_detail}", flush=True)
-                        traceback.print_exc()
+                        error_detail = f"Critical provider error ({provider.provider_name}): {str(exc)}"
+                        self.logger.exception(error_detail)
                         failure_reasons.append(f"[{provider.provider_name}] Critical: {str(exc)}")
                         break
 
@@ -184,9 +204,7 @@ class AIService:
         except ValueError:
             raise
         except Exception as e:
-            # THIS CATCHES EVERYTHING (DifficultyManager, etc.)
-            print(f"\n[CRITICAL ERROR] AIService crashed before AI loop: {str(e)}", flush=True)
-            traceback.print_exc()
+            self.logger.exception("AIService crashed before provider execution: %s", e)
             return self._trigger_fallback(request, None, f"Pre-generation crash: {str(e)}")
 
     def _update_failure_metrics(self, exc: Exception) -> None:
@@ -246,3 +264,57 @@ class AIService:
                 topic_id,
                 exc_info=True,
             )
+
+    def _normalize_provider_payload(self, payload):
+        if not isinstance(payload, dict):
+            return payload
+
+        quiz_questions = payload.get("quiz_questions")
+        if not isinstance(quiz_questions, list):
+            return payload
+
+        normalized_payload = dict(payload)
+        normalized_questions = []
+        for raw_question in quiz_questions:
+            if not isinstance(raw_question, dict):
+                normalized_questions.append(raw_question)
+                continue
+            question = dict(raw_question)
+            if question.get("rubric") in (None, "", []):
+                question["rubric"] = {}
+            if question.get("options") is None:
+                question["options"] = []
+            if isinstance(question.get("tags"), str):
+                question["tags"] = [question["tags"]]
+            if question.get("hint") == "":
+                question["hint"] = None
+            normalized_questions.append(question)
+
+        normalized_payload["quiz_questions"] = normalized_questions
+        return normalized_payload
+
+    def _provider_is_available(self, provider: BaseAIProvider) -> bool:
+        cooldown_until = self._provider_cooldowns_until.get(provider.provider_name)
+        if cooldown_until is None:
+            return True
+        if time.monotonic() >= cooldown_until:
+            self._provider_cooldowns_until.pop(provider.provider_name, None)
+            self._provider_cooldown_reasons.pop(provider.provider_name, None)
+            return True
+        return False
+
+    def _provider_unavailable_reason_text(self) -> str:
+        if not self._provider_cooldown_reasons:
+            return ""
+        reasons = [self._provider_cooldown_reasons[name] for name in sorted(self._provider_cooldown_reasons)]
+        return " | ".join(reasons)
+
+    def _mark_provider_cooldown(self, provider: BaseAIProvider, exc: QuotaExceededAIError) -> None:
+        retry_after_seconds = exc.retry_after_seconds if exc.retry_after_seconds is not None else 60.0
+        retry_after_seconds = max(1.0, retry_after_seconds)
+        self._provider_cooldowns_until[provider.provider_name] = time.monotonic() + retry_after_seconds
+        retry_after_label = f"{retry_after_seconds:.0f}s"
+        self._provider_cooldown_reasons[provider.provider_name] = (
+            f"Provider {provider.provider_name} is temporarily unavailable due to quota exhaustion "
+            f"(retry after about {retry_after_label})."
+        )

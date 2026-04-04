@@ -11,6 +11,7 @@ from .roadmap import ContentLibrary
 
 if TYPE_CHECKING:
     from app.ai.service import AIService
+    from app.storage.interfaces import OfflineQuestionRepository
 
 
 @dataclass(frozen=True, slots=True)
@@ -32,10 +33,34 @@ class ContentQualityReport:
     ai_samples: int
 
 
+@dataclass(frozen=True, slots=True)
+class OfflineQuestionSeedResult:
+    topic_id: str
+    title: str
+    level: int
+    cefr_band: str
+    source: str
+    requested_question_count: int
+    stored_question_count_before: int
+    stored_question_count_after: int
+    added_question_count: int
+    warnings: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class OfflineQuestionSeedReport:
+    topics: tuple[OfflineQuestionSeedResult, ...]
+    total_topics: int
+    total_questions_before: int
+    total_questions_after: int
+    total_questions_added: int
+
+
 @dataclass(slots=True)
 class QualityService:
     content_library: ContentLibrary
     ai_service: "AIService"
+    offline_question_repository: "OfflineQuestionRepository"
 
     def sample_lessons(
         self,
@@ -80,6 +105,84 @@ class QualityService:
             ai_samples=ai_samples,
         )
 
+    def seed_offline_question_bank(
+        self,
+        *,
+        topic_ids: Sequence[str] | None = None,
+        question_count: int = 10,
+        session_goal: str = "lesson",
+    ) -> OfflineQuestionSeedReport:
+        selected_topics = self._resolve_topics(topic_ids)
+        total_before = self.offline_question_repository.count_all()
+        topic_results: list[OfflineQuestionSeedResult] = []
+        max_seed_attempts_per_topic = 3
+
+        for topic in selected_topics:
+            before_count = self.offline_question_repository.count_for_topic(topic.topic_id)
+            after_count = before_count
+            source_labels: list[str] = []
+            warnings: list[str] = []
+
+            if after_count < question_count:
+                progress = self._sample_progress_for_topic(topic)
+                for _ in range(max_seed_attempts_per_topic):
+                    remaining = question_count - after_count
+                    result = self.ai_service.generate_lesson(
+                        LessonGenerationRequest(
+                            user_progress=progress,
+                            topic_id=topic.topic_id,
+                            session_goal=session_goal,
+                            question_count=remaining,
+                        )
+                    )
+                    self.offline_question_repository.upsert_questions(
+                        topic.topic_id,
+                        result.lesson.quiz_questions,
+                        provider_name=result.provider_name,
+                        model=result.model,
+                    )
+                    source_labels.append(result.source)
+                    warnings.extend(result.warnings)
+                    updated_count = self.offline_question_repository.count_for_topic(topic.topic_id)
+                    if updated_count <= after_count and result.source == "fallback":
+                        warnings.append(
+                            "Stopped early because only deterministic fallback questions were available for this topic."
+                        )
+                        after_count = updated_count
+                        break
+                    after_count = updated_count
+                    if after_count >= question_count:
+                        break
+
+            if after_count < question_count:
+                warnings.append(
+                    f"Stored {after_count} unique questions for this topic; the requested minimum was {question_count}."
+                )
+
+            topic_results.append(
+                OfflineQuestionSeedResult(
+                    topic_id=topic.topic_id,
+                    title=topic.title,
+                    level=topic.level,
+                    cefr_band=topic.cefr_band.value,
+                    source=self._summarize_seed_sources(before_count, source_labels),
+                    requested_question_count=question_count,
+                    stored_question_count_before=before_count,
+                    stored_question_count_after=after_count,
+                    added_question_count=after_count - before_count,
+                    warnings=tuple(dict.fromkeys(warnings)),
+                )
+            )
+
+        total_after = self.offline_question_repository.count_all()
+        return OfflineQuestionSeedReport(
+            topics=tuple(topic_results),
+            total_topics=len(topic_results),
+            total_questions_before=total_before,
+            total_questions_after=total_after,
+            total_questions_added=total_after - total_before,
+        )
+
     def _resolve_topics(self, topic_ids: Sequence[str] | None) -> tuple[TopicMetadata, ...]:
         if not topic_ids:
             return self.content_library.all_topics()
@@ -111,3 +214,13 @@ class QualityService:
             progress.update_skill_score("grammar", 80.0)
             progress.update_skill_score("integrated_grammar", 78.0)
         return progress
+
+    def _summarize_seed_sources(self, existing_count: int, source_labels: Sequence[str]) -> str:
+        if existing_count > 0 and not source_labels:
+            return "existing"
+        unique_sources = tuple(dict.fromkeys(source_labels))
+        if not unique_sources:
+            return "none"
+        if len(unique_sources) == 1:
+            return unique_sources[0]
+        return "mixed"

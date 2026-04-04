@@ -23,6 +23,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     subcommands.add_parser("serve", help="Run the browser-based learner interface.")
     subcommands.add_parser("status", help="Print configuration and runtime status.")
     subcommands.add_parser("reset-progress", help="Reset the default learner's local progress for testing.")
+    subcommands.add_parser(
+        "clear-offline-questions",
+        help="Delete all archived offline fallback or AI-generated questions.",
+    )
     set_progress_parser = subcommands.add_parser(
         "set-progress",
         help="Jump the default learner to a testing level or CEFR band.",
@@ -56,6 +60,27 @@ def main(argv: Sequence[str] | None = None) -> int:
         choices=("lesson", "review", "practice"),
         help="Session goal to use for the sample run.",
     )
+    seed_parser = subcommands.add_parser(
+        "seed-offline-questions",
+        help="Top up the offline question bank to 10 archived questions per roadmap topic by default.",
+    )
+    seed_parser.add_argument(
+        "--topics",
+        nargs="*",
+        help="Optional topic ids to seed. Defaults to the full roadmap from A1 through B2.",
+    )
+    seed_parser.add_argument(
+        "--question-count",
+        type=int,
+        default=10,
+        help="Minimum archived question count per topic. Defaults to 10.",
+    )
+    seed_parser.add_argument(
+        "--goal",
+        default="lesson",
+        choices=("lesson", "review", "practice"),
+        help="Session goal to use when generating the seed content.",
+    )
     args = parser.parse_args(list(argv) if argv is not None else sys.argv[1:])
 
     app = create_application()
@@ -69,6 +94,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         print("Current level: 1")
         print("Current CEFR band: A1")
         print("Current difficulty: 1")
+        return 0
+    if command == "clear-offline-questions":
+        deleted = app.persistence.offline_questions.delete_all()
+        print("Cleared offline question bank.")
+        print(f"Questions deleted: {deleted}")
         return 0
     if command == "set-progress":
         target_level = args.level if args.level is not None else CEFR_TO_LEVEL[args.band]
@@ -110,6 +140,33 @@ def main(argv: Sequence[str] | None = None) -> int:
             if sample.warnings:
                 print(f"  warnings: {' | '.join(sample.warnings)}")
         return 0
+    if command == "seed-offline-questions":
+        print(
+            "AI provider: "
+            f"{app.ai_service.provider.provider_name} "
+            f"({app.ai_service.provider.model}, configured={app.ai_service.is_configured})"
+        )
+        if not app.ai_service.is_configured:
+            print("Seeding will use fallback content only because no AI provider is configured for this process.")
+        report = app.quality_service.seed_offline_question_bank(
+            topic_ids=args.topics,
+            question_count=args.question_count,
+            session_goal=args.goal,
+        )
+        print("Lumina Romana offline question bank seed")
+        print(f"Topics processed: {report.total_topics}")
+        print(f"Questions before: {report.total_questions_before}")
+        print(f"Questions after: {report.total_questions_after}")
+        print(f"Questions added: {report.total_questions_added}")
+        for topic in report.topics:
+            print(
+                f"- {topic.topic_id}: level {topic.level} / {topic.cefr_band} / "
+                f"source={topic.source} / before={topic.stored_question_count_before} / "
+                f"after={topic.stored_question_count_after} / added={topic.added_question_count}"
+            )
+            if topic.warnings:
+                print(f"  warnings: {' | '.join(topic.warnings)}")
+        return 0
 
     app.logger.info("Loading %s diagnostics in %s mode", app.settings.app_name, app.settings.environment)
     print(f"{app.settings.app_name} developer status")
@@ -117,6 +174,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     print(f"Data directory: {app.settings.data_dir}")
     print(f"Database path: {app.settings.database_path}")
     print(f"Seed topics loaded: {len(app.content_library.all_topics())}")
+    print(f"Offline question bank size: {app.persistence.offline_questions.count_all()}")
     print(
         "AI provider: "
         f"{app.ai_service.provider.provider_name} "

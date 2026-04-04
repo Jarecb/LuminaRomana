@@ -396,6 +396,8 @@ Notes:
 - Prompt regression fixtures intentionally lock down representative metadata and required prompt snippets rather than entire prompt bodies, which keeps the tests useful without becoming needlessly brittle
 
 ## Stage 10: Packaging and Deployment
+Status: completed on 2026-04-04.
+
 Objective: make the application easy to run outside the development environment.
 
 Deliverables:
@@ -410,6 +412,28 @@ Exit criteria:
 - A new user can install and run the app from documentation alone, including the web GUI
 - Configuration for AI provider keys is documented
 - The deploy path is repeatable
+
+Implementation notes:
+- Added explicit Python packaging metadata in `pyproject.toml` with a `setuptools` build backend so wheels and source builds are repeatable
+- Expanded local ignore rules in `.gitignore` for:
+  Python caches, build artifacts, local databases, and environment override files
+- Reworked `run_server.bat` into the supported Windows-first local startup path:
+  it now centralizes AI settings, chooses the project virtualenv automatically when present, and fails fast when AI is enabled but no API key is set
+- Added optional containerization assets:
+  `Dockerfile` and `.dockerignore`
+- Added deployment and update documentation in:
+  `docs/DEPLOYMENT.md`
+- Rewrote `README.md` so it now documents the real application rather than the earlier scaffold, including:
+  local install, CLI commands, web startup, Gemini and Copilot/OpenAI-compatible configuration, persistence details, and Docker usage
+- Finalized offline-question-bank maintenance commands in the CLI:
+  `clear-offline-questions` and `seed-offline-questions`
+- Added a seeding workflow that can top up the archived offline question bank across the full Level 1 through Level 10 roadmap, targeting ten archived questions per topic by default
+- Updated `spec.md` baseline notes to reflect the current codebase through Stage 10
+
+Notes:
+- Stage 10 packages the existing local-first application; it does not add a hosted multi-user production stack, background workers, or cloud orchestration
+- The supported deployment paths are now:
+  source checkout, editable install, built wheel install, and optional Docker container for the web UI
 
 ## Recommended Build Order
 1. Stage 0
@@ -434,7 +458,7 @@ Validation is placed before heavy AI reliance on purpose. Without that sequencin
 - Milestone 5: packaging and deployment readiness
 
 ## Immediate Next Steps
-1. Extend the AI layer to generate more descriptive learner-facing grammar explanations for later roadmap stages with the same validation discipline now used for lesson content.
-2. Add end-to-end generation tests that cover bootstrap, provider calls, validation, fallback behavior, multi-set progression gating, and persistence together.
-3. Expand curated fallback coverage if B1-B2 offline or provider-disabled operation becomes a product requirement.
-4. Add richer administrative CLI tooling if multi-user local testing or content-inspection workflows become necessary.
+1. Add a real learner-facing placement-test flow in the web UI so the existing placement engine is usable without developer tooling.
+2. Add administrative inspection commands for reviewing archived offline AI questions and lesson-generation failures in more detail.
+3. Add optional export or backup tooling for the SQLite learner database and wordbank.
+4. Evaluate whether open-response writing should remain reference-answer based or gain a validated scoring workflow.

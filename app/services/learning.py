@@ -722,13 +722,21 @@ class LearningService:
         return lesson.lesson_id.startswith("practice-") or "-practice-" in lesson.lesson_id
 
     def _lesson_is_resume_ready(self, lesson: Lesson) -> bool:
-        return all(not self._prompt_has_missing_dialogue_context(question.prompt) for question in lesson.quiz_questions)
+        return all(not self._prompt_has_missing_context(question.prompt) for question in lesson.quiz_questions)
 
-    def _prompt_has_missing_dialogue_context(self, prompt: str) -> bool:
+    def _prompt_has_missing_context(self, prompt: str) -> bool:
         lowered = prompt.casefold()
         references_dialogue = any(marker in lowered for marker in ("dialogue", "reply", "response", "conversation"))
-        if not references_dialogue:
-            return False
         has_quotes = prompt.count("'") >= 2 or prompt.count('"') >= 2
         has_turn_markers = prompt.count(":") >= 2 and "___" in prompt
-        return not (has_quotes or has_turn_markers)
+        if references_dialogue:
+            return not (has_quotes or has_turn_markers)
+
+        references_sentence = "sentence" in lowered and any(
+            marker in lowered for marker in ("complete the sentence", "rewrite the sentence", "transform the sentence")
+        )
+        if references_sentence:
+            has_sentence_pattern = "___" in prompt and prompt.count(":") >= 1 and len(prompt.split()) >= 8
+            return not (has_quotes or has_sentence_pattern)
+
+        return False

@@ -1,14 +1,17 @@
 import json
 import logging
+from urllib import request as urllib_request
 
 import pytest
 
 from app.ai import (
+    AIMessage,
     AIProviderResponse,
     AIService,
     LessonGenerationError,
     LessonGenerationRequest,
     PromptBuilder,
+    QuotaExceededAIError,
     TransientAIError,
 )
 from app.ai.providers import BaseAIProvider
@@ -33,6 +36,21 @@ class StubProvider(BaseAIProvider):
         if isinstance(response, Exception):
             raise response
         return response
+
+
+class CountingQuotaProvider(BaseAIProvider):
+    def __init__(self):
+        self.provider_name = "quota-stub"
+        self.model = "quota-model"
+        self.calls = 0
+
+    @property
+    def is_configured(self) -> bool:
+        return True
+
+    def generate_json(self, messages, temperature):
+        self.calls += 1
+        raise QuotaExceededAIError("Quota exhausted.", retry_after_seconds=60.0)
 
 
 def test_prompt_builder_uses_topic_difficulty_cefr_and_focus_tags():
@@ -520,3 +538,159 @@ def test_ai_service_archives_generated_questions_into_offline_pool(tmp_path):
         question.prompt == "AI archived prompt: Complete 'Eu ___ aici.'"
         for question in fallback_lesson.quiz_questions
     )
+
+
+def test_ai_service_skips_provider_calls_while_quota_cooldown_is_active():
+    provider = CountingQuotaProvider()
+    content_library = ContentLibrary()
+    service = AIService(
+        provider=provider,
+        prompt_builder=PromptBuilder(),
+        content_library=content_library,
+        difficulty_manager=DifficultyManager(content_library),
+        content_validator=ContentValidator(),
+        logger=logging.getLogger("test.ai.quota"),
+        max_retries=2,
+    )
+
+    first = service.generate_lesson(
+        LessonGenerationRequest(
+            user_progress=UserProgress(user_id="learner-1"),
+            topic_id="romanian_basics",
+        )
+    )
+    second = service.generate_lesson(
+        LessonGenerationRequest(
+            user_progress=UserProgress(user_id="learner-1"),
+            topic_id="nouns_and_articles",
+        )
+    )
+
+    assert first.source == "fallback"
+    assert second.source == "fallback"
+    assert provider.calls == 1
+    assert "quota exhaustion" in second.warnings[0].casefold()
+
+
+def test_ai_service_normalizes_empty_rubrics_before_validation():
+    provider = StubProvider(
+        responses=[
+            AIProviderResponse(
+                provider_name="stub",
+                model="stub-model",
+                content=json.dumps(
+                    {
+                        "lesson_id": "lesson-1",
+                        "topic": "present_tense_verbs",
+                        "level": 4,
+                        "cefr_band": "A1",
+                        "difficulty": 4,
+                        "explanation_text": "Romanian present tense verbs must agree with the subject.",
+                        "example_sentences": [
+                            {"romanian": "Eu merg acasa.", "english": "I go home."}
+                        ],
+                        "key_rules": ["Match the verb ending to the subject."],
+                        "quiz_questions": [
+                            {
+                                "question_id": "q1",
+                                "type": "multiple_choice",
+                                "prompt": "Choose the correct form: Eu ___ acasa.",
+                                "options": ["merge", "merg", "mergem", "mergeti"],
+                                "correct_answer": "merg",
+                                "explanation": "The subject 'eu' takes the first-person singular form 'merg'.",
+                                "difficulty": 4,
+                                "tags": "present_tense_verbs",
+                                "hint": "",
+                                "rubric": [],
+                                "cefr_band": "A1",
+                            }
+                        ],
+                    }
+                ),
+            )
+        ]
+    )
+    content_library = ContentLibrary()
+    service = AIService(
+        provider=provider,
+        prompt_builder=PromptBuilder(),
+        content_library=content_library,
+        difficulty_manager=DifficultyManager(content_library),
+        content_validator=ContentValidator(),
+        logger=logging.getLogger("test.ai.normalize"),
+        max_retries=1,
+    )
+
+    result = service.generate_lesson(
+        LessonGenerationRequest(
+            user_progress=UserProgress(
+                user_id="learner-1",
+                current_level=4,
+                current_cefr_band=CEFRBand.A1,
+                current_difficulty=4,
+            ),
+            topic_id="present_tense_verbs",
+            question_count=1,
+        )
+    )
+
+    assert result.source == "ai"
+    assert result.lesson.quiz_questions[0].rubric == {}
+    assert result.lesson.quiz_questions[0].tags == ["present_tense_verbs"]
+    assert result.lesson.quiz_questions[0].hint is None
+
+
+def test_gemini_provider_uses_system_instruction_and_json_mime_type(monkeypatch):
+    captured = {}
+
+    class DummyResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def read(self):
+            return json.dumps(
+                {
+                    "candidates": [
+                        {
+                            "content": {
+                                "parts": [
+                                    {
+                                        "text": '{"lesson_id":"l1","topic":"nouns_and_articles","level":2,"cefr_band":"A1","difficulty":2,"explanation_text":"x","example_sentences":[{"romanian":"Cartea este aici.","english":"The book is here."}],"key_rules":["x"],"quiz_questions":[{"question_id":"q1","type":"multiple_choice","prompt":"Choose the correct form: Cartea ___ aici.","options":["este","sunt"],"correct_answer":"este","explanation":"x","difficulty":2,"tags":["nouns_and_articles"],"hint":"x","rubric":{},"cefr_band":"A1"}]}'
+                                    }
+                                ]
+                            },
+                            "finishReason": "STOP",
+                        }
+                    ],
+                    "usageMetadata": {"promptTokenCount": 1, "candidatesTokenCount": 1},
+                }
+            ).encode("utf-8")
+
+    def fake_urlopen(http_request, timeout):
+        captured["url"] = http_request.full_url
+        captured["timeout"] = timeout
+        captured["body"] = json.loads(http_request.data.decode("utf-8"))
+        return DummyResponse()
+
+    monkeypatch.setattr(urllib_request, "urlopen", fake_urlopen)
+
+    from app.ai.providers import GeminiAIProvider
+
+    provider = GeminiAIProvider(api_key="test-key", model="gemini-2.5-flash")
+    response = provider.generate_json(
+        messages=(
+            AIMessage(role="system", content="System rules for nouns_and_articles."),
+            AIMessage(role="user", content="Generate a lesson for nouns_and_articles."),
+        ),
+        temperature=0.2,
+    )
+
+    assert "/models/gemini-2.5-flash:generateContent?key=test-key" in captured["url"]
+    assert captured["body"]["generationConfig"]["responseMimeType"] == "application/json"
+    assert captured["body"]["system_instruction"]["parts"][0]["text"] == "System rules for nouns_and_articles."
+    assert captured["body"]["contents"][0]["parts"][0]["text"] == "Generate a lesson for nouns_and_articles."
+    assert "romanian_basics" not in json.dumps(captured["body"])
+    assert response.provider_name == "gemini"

@@ -2,11 +2,19 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 import json
+import re
 import socket
 from typing import Any
 from urllib import error, request
 
-from app.ai.types import AIConfigurationError, AIMessage, AIProviderError, AIProviderResponse, TransientAIError
+from app.ai.types import (
+    AIConfigurationError,
+    AIMessage,
+    AIProviderError,
+    AIProviderResponse,
+    QuotaExceededAIError,
+    TransientAIError,
+)
 
 
 class BaseAIProvider(ABC):
@@ -127,7 +135,7 @@ class GeminiAIProvider(BaseAIProvider):
         self.model = model
         self._api_key = api_key
         self._timeout_seconds = timeout_seconds
-        self._base_url = "https://generativelanguage.googleapis.com/v1"
+        self._base_url = "https://generativelanguage.googleapis.com/v1beta"
 
     @property
     def is_configured(self) -> bool:
@@ -144,47 +152,43 @@ class GeminiAIProvider(BaseAIProvider):
                 return content.strip()
         return text
 
-    def generate_json(self, messages: tuple[AIMessage, ...], temperature: float) -> AIProviderResponse:
-        print(f"\n[DEBUG] GeminiAIProvider: Calling {self.model}...", flush=True)
+    def _parse_retry_after_seconds(self, details: str) -> float | None:
+        match = re.search(r'"retryDelay"\s*:\s*"(\d+)s"', details)
+        if match is not None:
+            return float(match.group(1))
+        match = re.search(r"retry in ([0-9]+(?:\.[0-9]+)?)s", details, flags=re.IGNORECASE)
+        if match is not None:
+            return float(match.group(1))
+        return None
 
-        # We'll collect the system instructions and wrap them as the FIRST user message
-        # to ensure the model prioritizes the schema.
+    def generate_json(self, messages: tuple[AIMessage, ...], temperature: float) -> AIProviderResponse:
         contents = []
-        system_content = ""
-        user_messages = []
+        system_parts = []
 
         for msg in messages:
             if msg.role == "system":
-                system_content += f"{msg.content}\n"
+                system_parts.append({"text": msg.content})
             else:
                 role = "model" if msg.role in ("assistant", "ai") else "user"
-                user_messages.append({
+                contents.append({
                     "role": role,
                     "parts": [{"text": msg.content}]
                 })
 
-        # Inject instructions as the definitive context if they exist
-        if system_content:
-            contents.append({
-                "role": "user",
-                "parts": [{"text": f"IMPORTANT RULES:\n{system_content}\n\nSTRICT REQUIREMENT: You MUST include 'cefr_band': 'A1' and 'topic': 'romanian_basics' in your JSON output."}]
-            })
-            # Add an acknowledgment to "trick" the model into obedience
-            contents.append({
-                "role": "model",
-                "parts": [{"text": "Understood. I will provide the response in valid JSON format including all required metadata fields."}]
-            })
-
-        contents.extend(user_messages)
+        if not contents:
+            contents.append({"role": "user", "parts": [{"text": "Return valid JSON only."}]})
 
         payload = {
             "contents": contents,
             "generationConfig": {
                 "temperature": temperature,
-                "topP": 0.8, # Slightly reduced for more deterministic output
+                "topP": 0.8,
                 "maxOutputTokens": 8192,
+                "responseMimeType": "application/json",
             }
         }
+        if system_parts:
+            payload["system_instruction"] = {"parts": system_parts}
 
         body = json.dumps(payload).encode("utf-8")
         clean_model_name = self.model.replace("models/", "")
@@ -202,29 +206,32 @@ class GeminiAIProvider(BaseAIProvider):
                 response_body = response.read().decode("utf-8")
         except error.HTTPError as exc:
             details = exc.read().decode("utf-8", errors="replace")
-            print(f"\n[!!!] GEMINI API ERROR {exc.code}: {details}\n", flush=True)
+            if exc.code == 429:
+                raise QuotaExceededAIError(
+                    f"Gemini quota exceeded {exc.code}: {details}",
+                    retry_after_seconds=self._parse_retry_after_seconds(details),
+                ) from exc
             if exc.code in {408, 429, 500, 503, 504}:
                 raise TransientAIError(f"Gemini transient error {exc.code}: {details}") from exc
             raise AIProviderError(f"Gemini provider error {exc.code}: {details}") from exc
         except (error.URLError, TimeoutError, socket.timeout) as exc:
-            print(f"\n[!!!] GEMINI NETWORK ERROR: {str(exc)}\n", flush=True)
             raise TransientAIError(f"Gemini network error: {exc}") from exc
 
         try:
             res_json = json.loads(response_body)
             candidate = res_json["candidates"][0]
-            raw_content = candidate["content"]["parts"][0]["text"]
+            parts = candidate["content"]["parts"]
+            raw_content = "".join(
+                str(part.get("text", ""))
+                for part in parts
+                if isinstance(part, dict)
+            )
+            if not raw_content.strip():
+                raise AIProviderError("Gemini response did not include text content.")
 
             message_content = self._strip_markdown(raw_content)
-            # Pre-validation for debugging
-            parsed = json.loads(message_content)
-            if "cefr_band" not in parsed:
-                print(f"[DEBUG] Model missed cefr_band. Found keys: {list(parsed.keys())}", flush=True)
-
             usage = res_json.get("usageMetadata", {})
-            print("[DEBUG] GeminiAIProvider: Request successful.", flush=True)
         except (KeyError, IndexError, TypeError, json.JSONDecodeError) as exc:
-            print(f"\n[!!!] GEMINI PARSING ERROR: {str(exc)}\n", flush=True)
             raise AIProviderError(f"Gemini response parsing failed: {str(exc)}") from exc
 
         return AIProviderResponse(

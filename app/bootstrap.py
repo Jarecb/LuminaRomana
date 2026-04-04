@@ -89,6 +89,7 @@ def create_application() -> Application:
     quality_service = QualityService(
         content_library=content_library,
         ai_service=ai_service,
+        offline_question_repository=persistence.offline_questions,
     )
 
     return Application(

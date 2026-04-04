@@ -294,3 +294,45 @@ def test_content_validator_rejects_dialogue_prompt_without_dialogue_context():
         "does not include the actual dialogue context" in issue.message
         for issue in exc_info.value.issues
     )
+
+
+def test_content_validator_rejects_sentence_prompt_without_sentence_context():
+    content_library = ContentLibrary()
+    validator = ContentValidator()
+    topic = content_library.get_topic("romanian_basics")
+    assert topic is not None
+    payload = {
+        "lesson_id": "lesson-a1-sentence-bad",
+        "topic": "romanian_basics",
+        "level": 1,
+        "cefr_band": "A1",
+        "difficulty": 2,
+        "explanation_text": "This lesson includes a malformed sentence prompt.",
+        "example_sentences": [
+            {"romanian": "Eu sunt aici.", "english": "I am here."},
+        ],
+        "key_rules": ["Use forms of a fi with the right subject."],
+        "quiz_questions": [
+            {
+                "question_id": "q1",
+                "type": "multiple_choice",
+                "prompt": "Complete the sentence with the correct form of a fi.",
+                "options": ["este, suntem", "sunt, sunt", "esti, sunteti", "suntem, este"],
+                "correct_answer": "este, suntem",
+                "explanation": "The prompt needs to include the sentence being completed.",
+                "difficulty": 2,
+                "tags": ["romanian_basics", "a_fi_present"],
+                "hint": "Look at both subjects.",
+                "rubric": {},
+                "cefr_band": "A1",
+            },
+        ],
+    }
+
+    with pytest.raises(ContentValidationError) as exc_info:
+        validator.validate_lesson_payload(payload, topic=topic, expected_question_count=1)
+
+    assert any(
+        "does not include the actual sentence context" in issue.message
+        for issue in exc_info.value.issues
+    )

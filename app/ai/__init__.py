@@ -23,6 +23,7 @@ from app.ai.types import (
     LessonGenerationResult,
     PromptContext,
     PromptPackage,
+    QuotaExceededAIError,
     TransientAIError,
 )
 
@@ -44,5 +45,6 @@ __all__ = [
     "LessonGenerationError",
     "LessonGenerationRequest",
     "LessonGenerationResult",
+    "QuotaExceededAIError",
     "TransientAIError",
 ]
