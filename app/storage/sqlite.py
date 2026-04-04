@@ -3,9 +3,11 @@ from __future__ import annotations
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
+import hashlib
 import json
 from pathlib import Path
 import sqlite3
+from collections.abc import Sequence
 from typing import Iterator
 
 from app.models import CEFRBand, ExampleSentence, Lesson, Question, QuestionType, QuizAttempt, UserProgress, WordbankEntry
@@ -87,6 +89,23 @@ def _lesson_from_record(payload: str) -> Lesson:
     )
 
 
+def _question_fingerprint(topic_id: str, question: Question) -> str:
+    payload = {
+        "topic": topic_id,
+        "prompt": question.prompt.strip(),
+        "question_type": question.question_type.value,
+        "correct_answer": question.correct_answer.strip(),
+        "explanation": question.explanation.strip(),
+        "tags": sorted(question.tags),
+        "options": question.options,
+        "hint": question.hint,
+        "rubric": question.rubric,
+        "cefr_band": question.cefr_band.value,
+    }
+    serialized = json.dumps(payload, ensure_ascii=False, sort_keys=True)
+    return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+
+
 @dataclass(slots=True)
 class SQLiteStorage:
     database_path: Path
@@ -153,6 +172,25 @@ class SQLiteStorage:
                     first_seen_at TEXT NOT NULL,
                     PRIMARY KEY (user_id, word),
                     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+                );
+
+                CREATE TABLE IF NOT EXISTS offline_question_bank (
+                    fingerprint TEXT PRIMARY KEY,
+                    topic TEXT NOT NULL,
+                    prompt TEXT NOT NULL,
+                    question_type TEXT NOT NULL,
+                    difficulty_rating INTEGER NOT NULL,
+                    cefr_band TEXT NOT NULL,
+                    correct_answer TEXT NOT NULL,
+                    explanation TEXT NOT NULL,
+                    tags TEXT NOT NULL,
+                    options TEXT NOT NULL,
+                    hint TEXT,
+                    rubric TEXT NOT NULL,
+                    provider_name TEXT,
+                    model TEXT,
+                    created_at TEXT NOT NULL,
+                    last_seen_at TEXT NOT NULL
                 );
                 """
             )
@@ -439,3 +477,110 @@ class SQLiteWordbankRepository:
     def delete_for_user(self, user_id: str) -> None:
         with self.storage.connection() as conn:
             conn.execute("DELETE FROM wordbank WHERE user_id = ?", (user_id,))
+
+
+@dataclass(slots=True)
+class SQLiteOfflineQuestionRepository:
+    storage: SQLiteStorage
+
+    def upsert_questions(
+        self,
+        topic_id: str,
+        questions: Sequence[Question],
+        *,
+        provider_name: str | None = None,
+        model: str | None = None,
+    ) -> int:
+        now = _serialize_datetime(datetime.now()) or datetime.now().isoformat()
+        rows = [
+            (
+                _question_fingerprint(topic_id, question),
+                topic_id,
+                question.prompt,
+                question.question_type.value,
+                question.difficulty_rating,
+                question.cefr_band.value,
+                question.correct_answer,
+                question.explanation,
+                json.dumps(question.tags, ensure_ascii=False),
+                json.dumps(question.options, ensure_ascii=False),
+                question.hint,
+                json.dumps(question.rubric, ensure_ascii=False),
+                provider_name,
+                model,
+                now,
+                now,
+            )
+            for question in questions
+        ]
+        if not rows:
+            return 0
+
+        with self.storage.connection() as conn:
+            conn.executemany(
+                """
+                INSERT INTO offline_question_bank (
+                    fingerprint, topic, prompt, question_type, difficulty_rating, cefr_band,
+                    correct_answer, explanation, tags, options, hint, rubric,
+                    provider_name, model, created_at, last_seen_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(fingerprint) DO UPDATE SET
+                    difficulty_rating = excluded.difficulty_rating,
+                    cefr_band = excluded.cefr_band,
+                    explanation = excluded.explanation,
+                    tags = excluded.tags,
+                    options = excluded.options,
+                    hint = excluded.hint,
+                    rubric = excluded.rubric,
+                    provider_name = excluded.provider_name,
+                    model = excluded.model,
+                    last_seen_at = excluded.last_seen_at
+                """,
+                rows,
+            )
+        return len(rows)
+
+    def list_for_topic(self, topic_id: str, limit: int | None = None) -> list[Question]:
+        query = """
+            SELECT *
+            FROM offline_question_bank
+            WHERE topic = ?
+            ORDER BY last_seen_at DESC, created_at DESC
+        """
+        params: tuple[object, ...]
+        if limit is None:
+            params = (topic_id,)
+        else:
+            query += " LIMIT ?"
+            params = (topic_id, limit)
+
+        with self.storage.connection() as conn:
+            rows = conn.execute(query, params).fetchall()
+
+        questions: list[Question] = []
+        for index, row in enumerate(rows, start=1):
+            questions.append(
+                Question(
+                    question_id=f"offline-{topic_id}-{index}",
+                    prompt=row["prompt"],
+                    question_type=QuestionType(row["question_type"]),
+                    difficulty_rating=row["difficulty_rating"],
+                    cefr_band=CEFRBand(row["cefr_band"]),
+                    correct_answer=row["correct_answer"],
+                    explanation=row["explanation"],
+                    tags=list(json.loads(row["tags"])),
+                    options=list(json.loads(row["options"])),
+                    hint=row["hint"],
+                    rubric=dict(json.loads(row["rubric"])),
+                )
+            )
+        return questions
+
+    def count_for_topic(self, topic_id: str) -> int:
+        with self.storage.connection() as conn:
+            row = conn.execute(
+                "SELECT COUNT(*) AS question_count FROM offline_question_bank WHERE topic = ?",
+                (topic_id,),
+            ).fetchone()
+        return int(row["question_count"]) if row is not None else 0

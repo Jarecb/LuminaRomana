@@ -3,7 +3,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 import logging
 
-# Added GeminiAIProvider to imports
 from app.ai import AIService, DisabledAIProvider, AIChatProvider, GeminiAIProvider, PromptBuilder
 from app.config import Settings
 from app.logging_config import configure_logging
@@ -11,6 +10,7 @@ from app.services import ContentLibrary, DifficultyManager, QualityService
 from app.services.learning import LearningService
 from app.storage import (
     SQLiteLessonRepository,
+    SQLiteOfflineQuestionRepository,
     SQLiteQuizAttemptRepository,
     SQLiteStorage,
     SQLiteUserProgressRepository,
@@ -24,6 +24,7 @@ class Persistence:
     storage: SQLiteStorage
     user_progress: SQLiteUserProgressRepository
     lessons: SQLiteLessonRepository
+    offline_questions: SQLiteOfflineQuestionRepository
     quiz_attempts: SQLiteQuizAttemptRepository
     wordbank: SQLiteWordbankRepository
 
@@ -53,49 +54,27 @@ def create_application() -> Application:
         storage=storage,
         user_progress=SQLiteUserProgressRepository(storage),
         lessons=SQLiteLessonRepository(storage),
+        offline_questions=SQLiteOfflineQuestionRepository(storage),
         quiz_attempts=SQLiteQuizAttemptRepository(storage),
         wordbank=SQLiteWordbankRepository(storage),
     )
 
-    content_library = ContentLibrary()
+    content_library = ContentLibrary(offline_question_repository=persistence.offline_questions)
     difficulty_manager = DifficultyManager(content_library)
 
-    # --- FIXED AI PROVIDER LOGIC ---
     ai_settings = settings.ai
-    provider = None
+    provider = _build_ai_provider(ai_settings)
 
-    if ai_settings.is_configured:
-        if ai_settings.provider == "openai":
-            provider = AIChatProvider(
-                api_key=ai_settings.api_key or "",
-                model=ai_settings.model,
-                base_url=ai_settings.base_url,
-                timeout_seconds=ai_settings.timeout_seconds,
-            )
-        elif ai_settings.provider == "google":
-            provider = GeminiAIProvider(
-                api_key=ai_settings.api_key or "",
-                model=ai_settings.model,
-                timeout_seconds=ai_settings.timeout_seconds,
-            )
-
-    # Fallback to disabled if configuration is missing or provider is unknown
-    if provider is None:
-        provider = DisabledAIProvider(
-            provider_name=ai_settings.provider if ai_settings.enabled else "disabled",
-            model=ai_settings.model,
-        )
-
-    # The AIService expects initialized Provider objects, not the raw Settings dataclass.
     ai_service = AIService(
-        providers=[provider],  # CRITICAL FIX: Changed from [ai_settings] to [provider]
+        providers=[provider],
         prompt_builder=PromptBuilder(),
         content_library=content_library,
         difficulty_manager=difficulty_manager,
         content_validator=ContentValidator(),
-        logger=logger.getChild("ai")
+        logger=logger.getChild("ai"),
+        max_retries_per_provider=ai_settings.max_retries,
+        offline_question_repository=persistence.offline_questions,
     )
-    # -------------------------------
 
     learning_service = LearningService(
         user_progress_repository=persistence.user_progress,
@@ -121,4 +100,36 @@ def create_application() -> Application:
         ai_service=ai_service,
         learning_service=learning_service,
         quality_service=quality_service,
+    )
+
+
+def _build_ai_provider(ai_settings) -> DisabledAIProvider | AIChatProvider | GeminiAIProvider:
+    normalized_provider = ai_settings.provider.strip().lower()
+    if not ai_settings.is_configured:
+        return DisabledAIProvider(
+            provider_name=normalized_provider if ai_settings.enabled else "disabled",
+            model=ai_settings.model,
+        )
+
+    if normalized_provider in {"openai", "copilot", "github", "github_models"}:
+        provider_name = "copilot" if normalized_provider != "openai" else "openai"
+        return AIChatProvider(
+            api_key=ai_settings.api_key or "",
+            model=ai_settings.model,
+            base_url=ai_settings.base_url,
+            provider_name=provider_name,
+            timeout_seconds=ai_settings.timeout_seconds,
+        )
+
+    if normalized_provider in {"google", "gemini"}:
+        return GeminiAIProvider(
+            api_key=ai_settings.api_key or "",
+            model=ai_settings.model,
+            provider_name="gemini",
+            timeout_seconds=ai_settings.timeout_seconds,
+        )
+
+    return DisabledAIProvider(
+        provider_name=normalized_provider or "disabled",
+        model=ai_settings.model,
     )

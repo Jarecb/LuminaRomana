@@ -4,7 +4,7 @@ import logging
 
 from app.ai import AIService, PromptBuilder
 from app.ai.providers import DisabledAIProvider
-from app.models import CEFRBand, UserProgress
+from app.models import CEFRBand, Lesson, Question, QuestionType, UserProgress
 from app.services import ContentLibrary, DifficultyManager
 from app.services.learning import LearningService
 from app.storage import (
@@ -59,6 +59,23 @@ def test_start_session_generates_fallback_lesson_and_can_resume(tmp_path):
     assert resumed_session.resumed is True
     assert resumed_session.lesson is not None
     assert resumed_session.lesson.lesson_id == lesson_session.lesson.lesson_id
+
+
+def test_start_or_resume_lesson_session_generates_lesson_immediately(tmp_path):
+    service = build_learning_service(tmp_path)
+
+    session = service.start_or_resume_lesson_session()
+    resumed = service.start_or_resume_lesson_session()
+    wordbank = service.build_wordbank()
+
+    assert session.page_kind == "lesson"
+    assert session.lesson is not None
+    assert session.lesson.topic == "romanian_basics"
+    assert session.source == "fallback"
+    assert resumed.resumed is True
+    assert resumed.lesson is not None
+    assert resumed.lesson.lesson_id == session.lesson.lesson_id
+    assert any(entry.topic == "romanian_basics" for entry in wordbank.entries)
 
 
 def test_submit_quiz_requires_five_sets_plus_page_and_average_to_advance_topic(tmp_path):
@@ -322,3 +339,38 @@ def test_practice_replay_does_not_reduce_overall_progress(tmp_path):
     assert updated.current_cefr_band == CEFRBand.A2
     assert updated.mastery_matrix["present_tense_verbs"] == 0.84
     assert updated.mastery_matrix["romanian_basics"] == 0.9
+
+
+def test_start_or_resume_lesson_session_skips_saved_lesson_with_missing_dialogue_context(tmp_path):
+    service = build_learning_service(tmp_path)
+    progress = service.get_or_create_user_progress()
+    service.user_progress_repository.save(progress)
+    broken_lesson = Lesson(
+        lesson_id="broken-lesson",
+        topic="romanian_basics",
+        level=1,
+        cefr_band=CEFRBand.A1,
+        difficulty=2,
+        explanation_text="Broken saved lesson.",
+        example_sentences=[],
+        key_rules=["Use a fi."],
+        quiz_questions=[
+            Question(
+                question_id="q-broken",
+                prompt="Complete the dialogue with the appropriate forms of a fi.",
+                question_type=QuestionType.FILL_IN_THE_BLANK,
+                difficulty_rating=2,
+                cefr_band=CEFRBand.A1,
+                correct_answer="sunt",
+                explanation="Needs an actual dialogue to be answerable.",
+                tags=["romanian_basics", "a_fi_present"],
+                hint="Use the present tense.",
+            )
+        ],
+    )
+    service.lesson_repository.save("default-learner", broken_lesson)
+
+    session = service.start_or_resume_lesson_session()
+
+    assert session.lesson is not None
+    assert session.lesson.lesson_id != "broken-lesson"

@@ -49,3 +49,32 @@ def test_create_application_uses_loaded_settings(monkeypatch, tmp_path):
     assert app.ai_service.is_configured is False
     assert app.ai_service.provider.provider_name == "disabled"
     assert app.learning_service is not None
+
+
+def test_create_application_accepts_gemini_provider_alias(monkeypatch, tmp_path):
+    monkeypatch.setenv("LUMINA_ROMANA_DATA_DIR", str(tmp_path / "runtime"))
+    monkeypatch.setenv("LUMINA_ROMANA_AI_ENABLED", "true")
+    monkeypatch.setenv("LUMINA_ROMANA_AI_PROVIDER", "gemini")
+    monkeypatch.setenv("LUMINA_ROMANA_AI_MODEL", "gemini-2.5-flash")
+    monkeypatch.setenv("LUMINA_ROMANA_AI_API_KEY", "gemini-test-key")
+
+    app = create_application()
+
+    assert app.ai_service.is_configured is True
+    assert app.ai_service.provider.provider_name == "gemini"
+    assert app.ai_service.provider.model == "gemini-2.5-flash"
+
+
+def test_create_application_accepts_copilot_provider_alias(monkeypatch, tmp_path):
+    monkeypatch.setenv("LUMINA_ROMANA_DATA_DIR", str(tmp_path / "runtime"))
+    monkeypatch.setenv("LUMINA_ROMANA_AI_ENABLED", "true")
+    monkeypatch.setenv("LUMINA_ROMANA_AI_PROVIDER", "copilot")
+    monkeypatch.setenv("LUMINA_ROMANA_AI_MODEL", "gpt-4.1")
+    monkeypatch.setenv("LUMINA_ROMANA_AI_API_KEY", "copilot-test-key")
+    monkeypatch.setenv("LUMINA_ROMANA_AI_BASE_URL", "https://example.test/v1")
+
+    app = create_application()
+
+    assert app.ai_service.is_configured is True
+    assert app.ai_service.provider.provider_name == "copilot"
+    assert app.ai_service.provider.model == "gpt-4.1"

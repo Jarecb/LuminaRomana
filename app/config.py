@@ -26,6 +26,10 @@ class AISettings:
     def is_configured(self) -> bool:
         return self.enabled and bool(self.api_key)
 
+    @property
+    def configured(self) -> bool:
+        return self.is_configured
+
 
 @dataclass(slots=True)
 class WebSettings:

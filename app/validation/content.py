@@ -335,6 +335,13 @@ class ContentValidator:
             seen_prompts.add(prompt_key)
             self._check_text(f"quiz_questions[{index}].prompt", question.prompt, issues, max_length=320)
             self._check_text(f"quiz_questions[{index}].explanation", question.explanation, issues, max_length=500)
+            if self._references_dialogue(question.prompt) and not self._has_dialogue_context(question.prompt):
+                issues.append(
+                    ValidationIssue(
+                        path=f"quiz_questions[{index}].prompt",
+                        message="Prompt references dialogue or a reply but does not include the actual dialogue context.",
+                    )
+                )
             if question.question_type in {QuestionType.SENTENCE_TRANSFORMATION, QuestionType.DIALOGUE_COMPLETION}:
                 if len(question.prompt.split()) < 6:
                     issues.append(
@@ -434,6 +441,18 @@ class ContentValidator:
         connectors = (" cind ", " deoarece ", " pentru ca ", " dar ", " desi ", " ca sa ", " in timp ce ")
         lowered = f" {stripped.casefold()} "
         return any(connector in lowered for connector in connectors)
+
+    def _references_dialogue(self, prompt: str) -> bool:
+        lowered = prompt.casefold()
+        return any(marker in lowered for marker in ("dialogue", "reply", "response", "conversation"))
+
+    def _has_dialogue_context(self, prompt: str) -> bool:
+        single_quotes = prompt.count("'")
+        double_quotes = prompt.count('"')
+        if single_quotes >= 2 or double_quotes >= 2:
+            return True
+        # Allow simple speaker-turn formatting like "A: ... B: ..."
+        return prompt.count(":") >= 2 and "___" in prompt
 
     def _require_non_empty_string(self, value: Any, path: str, issues: list[ValidationIssue]) -> None:
         if not isinstance(value, str) or not value.strip():

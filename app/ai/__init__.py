@@ -13,14 +13,36 @@ from app.ai.providers import (
     GeminiAIProvider,  # This was likely missing
     DisabledAIProvider,
 )
+from app.ai.types import (
+    AIConfigurationError,
+    AIMessage,
+    AIProviderError,
+    AIProviderResponse,
+    LessonGenerationError,
+    LessonGenerationRequest,
+    LessonGenerationResult,
+    PromptContext,
+    PromptPackage,
+    TransientAIError,
+)
 
 # Explicitly define what is available for "from app.ai import *"
 __all__ = [
     "AIService",
     "AIServiceMetricsSnapshot",
+    "AIConfigurationError",
+    "AIMessage",
+    "AIProviderError",
+    "AIProviderResponse",
     "PromptBuilder",
+    "PromptContext",
+    "PromptPackage",
     "BaseAIProvider",
     "AIChatProvider",
     "GeminiAIProvider",
     "DisabledAIProvider",
+    "LessonGenerationError",
+    "LessonGenerationRequest",
+    "LessonGenerationResult",
+    "TransientAIError",
 ]

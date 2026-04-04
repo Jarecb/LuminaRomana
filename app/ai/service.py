@@ -7,7 +7,7 @@ from dataclasses import dataclass, replace
 from typing import Sequence
 
 from app.ai.prompts import PromptBuilder
-from app.ai.providers import BaseAIProvider
+from app.ai.providers import BaseAIProvider, DisabledAIProvider
 from app.ai.types import (
     AIConfigurationError,
     AIProviderError,
@@ -18,6 +18,7 @@ from app.ai.types import (
 )
 from app.services.difficulty import DifficultyManager
 from app.services.roadmap import ContentLibrary
+from app.storage.interfaces import OfflineQuestionRepository
 from app.validation import ContentValidationError, ContentValidator, lesson_to_payload
 
 
@@ -36,20 +37,31 @@ class AIServiceMetricsSnapshot:
 class AIService:
     def __init__(
             self,
-            providers: Sequence[BaseAIProvider],
             prompt_builder: PromptBuilder,
             content_library: ContentLibrary,
             difficulty_manager: DifficultyManager,
             content_validator: ContentValidator,
             logger: logging.Logger,
+            providers: Sequence[BaseAIProvider] | None = None,
             max_retries_per_provider: int = 2,
+            provider: BaseAIProvider | None = None,
+            max_retries: int | None = None,
+            offline_question_repository: OfflineQuestionRepository | None = None,
     ) -> None:
-        self.providers = [p for p in providers if p.is_configured]
+        if provider is not None and providers is not None:
+            raise ValueError("Pass either provider or providers, not both.")
+        resolved_providers = tuple(providers or (() if provider is None else (provider,)))
+        if max_retries is not None:
+            max_retries_per_provider = max_retries
+
+        self._all_providers = resolved_providers
+        self.providers = [p for p in resolved_providers if p.is_configured]
         self.prompt_builder = prompt_builder
         self.content_library = content_library
         self.difficulty_manager = difficulty_manager
         self.content_validator = content_validator
         self.logger = logger
+        self.offline_question_repository = offline_question_repository
         self.max_retries = max(0, max_retries_per_provider)
         self._metrics = {
             "total_requests": 0,
@@ -65,6 +77,14 @@ class AIService:
     @property
     def is_configured(self) -> bool:
         return len(self.providers) > 0
+
+    @property
+    def provider(self) -> BaseAIProvider:
+        if self.providers:
+            return self.providers[0]
+        if self._all_providers:
+            return self._all_providers[0]
+        return DisabledAIProvider()
 
     def metrics_snapshot(self) -> AIServiceMetricsSnapshot:
         return AIServiceMetricsSnapshot(**self._metrics)
@@ -113,6 +133,12 @@ class AIService:
                             topic=topic,
                             expected_question_count=current_request.question_count,
                         )
+                        self._archive_generated_questions(
+                            topic_id=topic.topic_id,
+                            lesson=lesson,
+                            provider_name=response.provider_name,
+                            model=response.model,
+                        )
 
                         self._metrics["successful_generations"] += 1
                         print(f"[SERVICE] Success with {provider.provider_name}", flush=True)
@@ -130,7 +156,10 @@ class AIService:
                         )
 
                     except (TransientAIError, json.JSONDecodeError, ContentValidationError) as exc:
-                        error_msg = f"Attempt {attempt} via {provider.provider_name} failed: {str(exc)}"
+                        error_msg = (
+                            f"Attempt {attempt} via {provider.provider_name} failed: {str(exc)} "
+                            f"(provider={provider.provider_name})"
+                        )
                         self.logger.warning(error_msg)
                         print(f"[SERVICE] {error_msg}", flush=True)
 
@@ -152,6 +181,8 @@ class AIService:
 
             return self._trigger_fallback(request, constraints, " | ".join(failure_reasons))
 
+        except ValueError:
+            raise
         except Exception as e:
             # THIS CATCHES EVERYTHING (DifficultyManager, etc.)
             print(f"\n[CRITICAL ERROR] AIService crashed before AI loop: {str(e)}", flush=True)
@@ -171,10 +202,11 @@ class AIService:
         if self.content_library.supports_fallback(request.topic_id):
             self.logger.info("Falling back to local content library for topic: %s", request.topic_id)
             self._metrics["fallback_generations"] += 1
+            fallback_difficulty = constraints.difficulty if constraints is not None else request.user_progress.current_difficulty
 
             fallback_lesson = self.content_library.build_fallback_lesson(
                 request.topic_id,
-                difficulty=constraints.difficulty if constraints else "medium",
+                difficulty=fallback_difficulty,
                 question_count=request.question_count,
                 session_goal=request.session_goal,
             )
@@ -190,3 +222,27 @@ class AIService:
             )
 
         raise LessonGenerationError(f"Generation failed and no fallback available: {reason_text}")
+
+    def _archive_generated_questions(
+        self,
+        *,
+        topic_id: str,
+        lesson,
+        provider_name: str,
+        model: str,
+    ) -> None:
+        if self.offline_question_repository is None:
+            return
+        try:
+            self.offline_question_repository.upsert_questions(
+                topic_id,
+                lesson.quiz_questions,
+                provider_name=provider_name,
+                model=model,
+            )
+        except Exception:
+            self.logger.warning(
+                "Failed to archive AI-generated questions for topic %s.",
+                topic_id,
+                exc_info=True,
+            )

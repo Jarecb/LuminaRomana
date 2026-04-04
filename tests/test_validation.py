@@ -252,3 +252,45 @@ def test_content_validator_accepts_b2_reading_and_guided_writing_tasks():
     assert validated.cefr_band == CEFRBand.B2
     assert any(question.question_type.value == "reading_comprehension" for question in validated.quiz_questions)
     assert any(question.question_type.value == "guided_writing" for question in validated.quiz_questions)
+
+
+def test_content_validator_rejects_dialogue_prompt_without_dialogue_context():
+    content_library = ContentLibrary()
+    validator = ContentValidator()
+    topic = content_library.get_topic("romanian_basics")
+    assert topic is not None
+    payload = {
+        "lesson_id": "lesson-a1-dialogue-bad",
+        "topic": "romanian_basics",
+        "level": 1,
+        "cefr_band": "A1",
+        "difficulty": 2,
+        "explanation_text": "This lesson tries to teach a fi but one prompt is not actually assessable.",
+        "example_sentences": [
+            {"romanian": "Eu sunt aici.", "english": "I am here."},
+        ],
+        "key_rules": ["Use forms of a fi with the right subject."],
+        "quiz_questions": [
+            {
+                "question_id": "q1",
+                "type": "fill_in_the_blank",
+                "prompt": "Complete the dialogue with the appropriate forms of a fi.",
+                "options": [],
+                "correct_answer": "sunt",
+                "explanation": "The answer should be the correct form of a fi.",
+                "difficulty": 2,
+                "tags": ["romanian_basics", "a_fi_present"],
+                "hint": "Use the present tense.",
+                "rubric": {},
+                "cefr_band": "A1",
+            },
+        ],
+    }
+
+    with pytest.raises(ContentValidationError) as exc_info:
+        validator.validate_lesson_payload(payload, topic=topic, expected_question_count=1)
+
+    assert any(
+        "does not include the actual dialogue context" in issue.message
+        for issue in exc_info.value.issues
+    )

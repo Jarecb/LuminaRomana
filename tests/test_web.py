@@ -63,24 +63,11 @@ def test_lesson_and_quiz_flow_render_explanations(monkeypatch, tmp_path):
     web_app = create_web_app(create_application())
 
     start_status, start_headers, _ = request(web_app, "POST", "/sessions/start", {})
-    intro_path = start_headers["Location"]
-    intro_status, _, intro_html = request(web_app, "GET", intro_path)
-    begin_status, begin_headers, _ = request(web_app, "POST", f"{intro_path}/begin", {})
-    revision_path = begin_headers["Location"]
-    revision_status, _, revision_html = request(web_app, "GET", revision_path)
-    practice_status, practice_headers, _ = request(web_app, "POST", f"{revision_path.removesuffix('/revision')}/practice", {})
-    lesson_path = practice_headers["Location"]
+    lesson_path = start_headers["Location"]
     lesson_status, _, lesson_html = request(web_app, "GET", lesson_path)
 
     assert start_status == "302 Found"
-    assert intro_status == "200 OK"
-    assert "What this level teaches" in intro_html
-    assert "diacritics" in intro_html or "a fi" in intro_html
-    assert begin_status == "302 Found"
-    assert revision_status == "200 OK"
-    assert "Revision vocabulary" in revision_html
-    assert "buna" in revision_html
-    assert practice_status == "302 Found"
+    assert lesson_path.startswith("/lessons/")
     assert lesson_status == "200 OK"
     assert "Question set" in lesson_html
     assert "Revision page" in lesson_html
@@ -114,11 +101,7 @@ def test_wrong_answer_result_page_shows_why_it_is_wrong(monkeypatch, tmp_path):
     web_app = create_web_app(create_application())
 
     _, start_headers, _ = request(web_app, "POST", "/sessions/start", {})
-    intro_path = start_headers["Location"]
-    _, begin_headers, _ = request(web_app, "POST", f"{intro_path}/begin", {})
-    revision_path = begin_headers["Location"]
-    _, practice_headers, _ = request(web_app, "POST", f"{revision_path.removesuffix('/revision')}/practice", {})
-    lesson_path = practice_headers["Location"]
+    lesson_path = start_headers["Location"]
     lesson_id = lesson_path.removeprefix("/lessons/")
     lesson = web_app.learning_service.lesson_repository.get(lesson_id)
     assert lesson is not None
@@ -137,14 +120,12 @@ def test_wordbank_search_finds_encountered_words(monkeypatch, tmp_path):
     web_app = create_web_app(create_application())
 
     _, start_headers, _ = request(web_app, "POST", "/sessions/start", {})
-    intro_path = start_headers["Location"]
-    _, begin_headers, _ = request(web_app, "POST", f"{intro_path}/begin", {})
-    revision_path = begin_headers["Location"]
-    revision_status, _, revision_html = request(web_app, "GET", revision_path)
+    lesson_path = start_headers["Location"]
+    lesson_status, _, lesson_html = request(web_app, "GET", lesson_path)
     search_status, _, search_html = request(web_app, "GET", "/wordbank?q=hello")
 
-    assert revision_status == "200 OK"
-    assert "buna" in revision_html
+    assert lesson_status == "200 OK"
+    assert "Question set" in lesson_html
     assert search_status == "200 OK"
     assert "buna" in search_html
     assert "hello" in search_html

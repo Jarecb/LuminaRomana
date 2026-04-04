@@ -34,7 +34,7 @@ class WebApp:
             if method == "GET" and path == "/":
                 response = self._html_response(self._render_dashboard())
             elif method == "POST" and path == "/sessions/start":
-                session = self.learning_service.start_or_resume_session(DEFAULT_USER_ID)
+                session = self.learning_service.start_or_resume_lesson_session(DEFAULT_USER_ID)
                 response = self._redirect(self._session_location(session))
             elif method == "GET" and path.startswith("/levels/"):
                 level_path = path.removeprefix("/levels/")

@@ -275,7 +275,7 @@ class LearningService:
             attempt.lesson_id for attempt in self.quiz_attempt_repository.list_for_user(user_id, limit=50)
         }
         for lesson in lessons:
-            if lesson.lesson_id not in attempted_lesson_ids:
+            if lesson.lesson_id not in attempted_lesson_ids and self._lesson_is_resume_ready(lesson):
                 return lesson
         return None
 
@@ -314,9 +314,33 @@ class LearningService:
             topic=topic,
             session_goal=self._infer_session_goal(user_id, topic.topic_id),
             resumed=False,
-            source="system",
-            level_revision=self.build_level_revision(user_id, topic.topic_id),
-        )
+                source="system",
+                level_revision=self.build_level_revision(user_id, topic.topic_id),
+            )
+
+    def start_or_resume_lesson_session(self, user_id: str = DEFAULT_USER_ID) -> LessonSession:
+        active_lesson = self.get_active_lesson(user_id)
+        if active_lesson is not None:
+            topic = self.content_library.get_topic(active_lesson.topic)
+            if topic is None:
+                raise ValueError(f"Unknown topic '{active_lesson.topic}'.")
+            return LessonSession(
+                page_kind="lesson",
+                topic=topic,
+                lesson=active_lesson,
+                session_goal=self._infer_session_goal(user_id, topic.topic_id),
+                resumed=True,
+                source="history",
+                warnings=(),
+            )
+
+        progress = self.get_or_create_user_progress(user_id)
+        topic = self.content_library.next_topic_for_user(progress)
+        if topic is None:
+            topic = self.content_library.all_topics()[-1]
+
+        self._record_topic_vocabulary(user_id, topic.topic_id)
+        return self.start_topic_lesson(topic.topic_id, user_id=user_id)
 
     def start_topic_lesson(
             self,
@@ -696,3 +720,15 @@ class LearningService:
 
     def _is_practice_lesson(self, lesson: Lesson) -> bool:
         return lesson.lesson_id.startswith("practice-") or "-practice-" in lesson.lesson_id
+
+    def _lesson_is_resume_ready(self, lesson: Lesson) -> bool:
+        return all(not self._prompt_has_missing_dialogue_context(question.prompt) for question in lesson.quiz_questions)
+
+    def _prompt_has_missing_dialogue_context(self, prompt: str) -> bool:
+        lowered = prompt.casefold()
+        references_dialogue = any(marker in lowered for marker in ("dialogue", "reply", "response", "conversation"))
+        if not references_dialogue:
+            return False
+        has_quotes = prompt.count("'") >= 2 or prompt.count('"') >= 2
+        has_turn_markers = prompt.count(":") >= 2 and "___" in prompt
+        return not (has_quotes or has_turn_markers)

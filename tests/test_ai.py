@@ -1,3 +1,4 @@
+import json
 import logging
 
 import pytest
@@ -13,7 +14,8 @@ from app.ai import (
 from app.ai.providers import BaseAIProvider
 from app.models import CEFRBand, UserProgress
 from app.services import ContentLibrary, DifficultyManager
-from app.validation import ContentValidator
+from app.storage import SQLiteOfflineQuestionRepository, SQLiteStorage
+from app.validation import ContentValidator, lesson_to_payload
 
 
 class StubProvider(BaseAIProvider):
@@ -470,3 +472,51 @@ def test_ai_service_uses_b2_fallback_with_reading_and_writing_tasks():
     assert result.lesson.cefr_band == CEFRBand.B2
     assert any(question.question_type.value == "reading_comprehension" for question in result.lesson.quiz_questions)
     assert any(question.question_type.value == "guided_writing" for question in result.lesson.quiz_questions)
+
+
+def test_ai_service_archives_generated_questions_into_offline_pool(tmp_path):
+    storage = SQLiteStorage(tmp_path / "lumina_romana.db")
+    storage.initialize()
+    offline_repository = SQLiteOfflineQuestionRepository(storage)
+    content_library = ContentLibrary(offline_question_repository=offline_repository)
+    difficulty_manager = DifficultyManager(content_library)
+    archived_lesson = content_library.build_fallback_lesson("romanian_basics", difficulty=2, question_count=5)
+    archived_lesson.lesson_id = "ai-lesson-1"
+    archived_lesson.quiz_questions[0].question_id = "ai-q1"
+    archived_lesson.quiz_questions[0].prompt = "AI archived prompt: Complete 'Eu ___ aici.'"
+
+    service = AIService(
+        provider=StubProvider(
+            responses=[
+                AIProviderResponse(
+                    provider_name="gemini",
+                    model="gemini-2.5-flash",
+                    content=json.dumps(lesson_to_payload(archived_lesson)),
+                )
+            ]
+        ),
+        prompt_builder=PromptBuilder(),
+        content_library=content_library,
+        difficulty_manager=difficulty_manager,
+        content_validator=ContentValidator(),
+        logger=logging.getLogger("test.ai.archive"),
+        max_retries=1,
+        offline_question_repository=offline_repository,
+    )
+
+    result = service.generate_lesson(
+        LessonGenerationRequest(
+            user_progress=UserProgress(user_id="learner-1"),
+            topic_id="romanian_basics",
+            question_count=5,
+        )
+    )
+
+    fallback_lesson = content_library.build_fallback_lesson("romanian_basics", difficulty=2, question_count=9)
+
+    assert result.source == "ai"
+    assert offline_repository.count_for_topic("romanian_basics") == 5
+    assert any(
+        question.prompt == "AI archived prompt: Complete 'Eu ___ aici.'"
+        for question in fallback_lesson.quiz_questions
+    )

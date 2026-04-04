@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Protocol
 
-from app.models import Lesson, QuizAttempt, UserProgress, WordbankEntry
+from app.models import Lesson, Question, QuizAttempt, UserProgress, WordbankEntry
 
 
 class UserProgressRepository(Protocol):
@@ -37,3 +38,18 @@ class WordbankRepository(Protocol):
     def search_for_user(self, user_id: str, query: str = "", limit: int = 100) -> list[WordbankEntry]: ...
 
     def delete_for_user(self, user_id: str) -> None: ...
+
+
+class OfflineQuestionRepository(Protocol):
+    def upsert_questions(
+        self,
+        topic_id: str,
+        questions: Sequence[Question],
+        *,
+        provider_name: str | None = None,
+        model: str | None = None,
+    ) -> int: ...
+
+    def list_for_topic(self, topic_id: str, limit: int | None = None) -> list[Question]: ...
+
+    def count_for_topic(self, topic_id: str) -> int: ...

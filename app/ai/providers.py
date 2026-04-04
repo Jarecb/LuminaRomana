@@ -42,9 +42,10 @@ class AIChatProvider(BaseAIProvider):
             api_key: str,
             model: str,
             base_url: str,
+            provider_name: str = "openai",
             timeout_seconds: float = 30.0,
     ) -> None:
-        self.provider_name = "openai"
+        self.provider_name = provider_name
         self.model = model
         self._api_key = api_key
         self._base_url = base_url.rstrip("/")
@@ -119,9 +120,10 @@ class GeminiAIProvider(BaseAIProvider):
             self,
             api_key: str,
             model: str = "gemini-2.5-flash",
+            provider_name: str = "gemini",
             timeout_seconds: float = 30.0,
     ) -> None:
-        self.provider_name = "google"
+        self.provider_name = provider_name
         self.model = model
         self._api_key = api_key
         self._timeout_seconds = timeout_seconds

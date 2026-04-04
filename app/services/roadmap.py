@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 import random
+from typing import TYPE_CHECKING
 
 from app.models import (
     PLACEMENT_TEST_BLUEPRINT,
@@ -16,6 +17,9 @@ from app.models import (
     TopicMetadata,
     UserProgress,
 )
+
+if TYPE_CHECKING:
+    from app.storage import OfflineQuestionRepository
 
 
 @dataclass(frozen=True, slots=True)
@@ -916,10 +920,12 @@ class ContentLibrary:
         self,
         topics: tuple[TopicMetadata, ...] = ROADMAP_TOPICS,
         placement_blueprint: tuple[PlacementTestSection, ...] = PLACEMENT_TEST_BLUEPRINT,
+        offline_question_repository: "OfflineQuestionRepository | None" = None,
     ) -> None:
         self._topics = tuple(sorted(topics, key=lambda topic: topic.level))
         self._topics_by_id = {topic.topic_id: topic for topic in topics}
         self._placement_blueprint = placement_blueprint
+        self._offline_question_repository = offline_question_repository
         self._validate_topics()
         self._validate_placement_blueprint()
 
@@ -955,7 +961,8 @@ class ContentLibrary:
         if template is None:
             raise ValueError(f"No fallback template is available for topic '{topic_id}'.")
         normalized_difficulty = max(1, min(10, difficulty))
-        selected_templates = self._select_fallback_questions(template.questions, question_count)
+        question_templates = self._fallback_question_pool(topic_id, template.questions)
+        selected_templates = self._select_fallback_questions(question_templates, question_count)
         questions: list[Question] = []
         for index, base in enumerate(selected_templates, start=1):
             questions.append(
@@ -996,6 +1003,44 @@ class ContentLibrary:
         while len(selected) < question_count:
             selected.extend(random.sample(list(templates), len(templates)))
         return selected[:question_count]
+
+    def _fallback_question_pool(
+        self,
+        topic_id: str,
+        templates: tuple[FallbackQuestionTemplate, ...],
+    ) -> tuple[FallbackQuestionTemplate, ...]:
+        combined: list[FallbackQuestionTemplate] = list(templates)
+        if self._offline_question_repository is not None:
+            combined.extend(
+                self._question_to_template(question)
+                for question in self._offline_question_repository.list_for_topic(topic_id)
+            )
+
+        deduped: list[FallbackQuestionTemplate] = []
+        seen: set[tuple[str, str, str]] = set()
+        for template in combined:
+            key = (
+                template.question_type.value,
+                template.prompt.strip().casefold(),
+                template.correct_answer.strip().casefold(),
+            )
+            if key in seen:
+                continue
+            seen.add(key)
+            deduped.append(template)
+        return tuple(deduped)
+
+    def _question_to_template(self, question: Question) -> FallbackQuestionTemplate:
+        return FallbackQuestionTemplate(
+            prompt=question.prompt,
+            question_type=question.question_type,
+            correct_answer=question.correct_answer,
+            explanation=question.explanation,
+            tags=tuple(question.tags),
+            options=tuple(question.options),
+            hint=question.hint,
+            rubric=dict(question.rubric),
+        )
 
     def target_cefr_band(self, level: int) -> CEFRBand:
         if level < 1:
