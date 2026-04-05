@@ -11,7 +11,7 @@ from app.services import ContentLibrary, DifficultyManager, QualityService
 from app.storage import SQLiteOfflineQuestionRepository, SQLiteStorage
 from app.validation import ContentValidator
 
-from tests.test_ai import StubProvider
+from tests.test_ai import CountingQuotaProvider, StubProvider
 
 
 def test_quality_service_samples_requested_topics(tmp_path):
@@ -169,3 +169,35 @@ def test_prompt_regression_fixtures_match_current_builder():
         combined = "\n".join(message.content for message in prompt.messages)
         for snippet in case["required_snippets"]:
             assert snippet in combined
+
+
+def test_quality_service_stops_seed_loop_after_quota_exhaustion(tmp_path):
+    storage = SQLiteStorage(tmp_path / "lumina_romana.db")
+    storage.initialize()
+    offline_repository = SQLiteOfflineQuestionRepository(storage)
+    content_library = ContentLibrary(offline_question_repository=offline_repository)
+    ai_service = AIService(
+        provider=CountingQuotaProvider(),
+        prompt_builder=PromptBuilder(),
+        content_library=content_library,
+        difficulty_manager=DifficultyManager(content_library),
+        content_validator=ContentValidator(),
+        logger=logging.getLogger("test.quality.quota"),
+        max_retries=2,
+        offline_question_repository=offline_repository,
+    )
+    quality_service = QualityService(
+        content_library=content_library,
+        ai_service=ai_service,
+        offline_question_repository=offline_repository,
+    )
+
+    report = quality_service.seed_offline_question_bank(
+        topic_ids=("romanian_basics",),
+        question_count=100,
+    )
+    metrics = ai_service.metrics_snapshot()
+
+    assert report.topics[0].topic_id == "romanian_basics"
+    assert any("quota exhaustion" in warning.casefold() for warning in report.topics[0].warnings)
+    assert metrics.fallback_generations == 1

@@ -16,6 +16,8 @@ CEFR_TO_LEVEL = {
     "B2": 9,
 }
 
+DEFAULT_OFFLINE_QUESTION_TARGET = 100
+
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="lumina-romana")
@@ -62,7 +64,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     seed_parser = subcommands.add_parser(
         "seed-offline-questions",
-        help="Top up the offline question bank to 10 archived questions per roadmap topic by default.",
+        help=f"Top up the offline question bank to {DEFAULT_OFFLINE_QUESTION_TARGET} archived questions per roadmap topic by default.",
     )
     seed_parser.add_argument(
         "--topics",
@@ -72,8 +74,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     seed_parser.add_argument(
         "--question-count",
         type=int,
-        default=10,
-        help="Minimum archived question count per topic. Defaults to 10.",
+        default=DEFAULT_OFFLINE_QUESTION_TARGET,
+        help=f"Minimum archived question count per topic. Defaults to {DEFAULT_OFFLINE_QUESTION_TARGET}.",
     )
     seed_parser.add_argument(
         "--goal",

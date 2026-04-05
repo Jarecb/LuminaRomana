@@ -56,6 +56,8 @@ class LessonGenerationRequest:
     temperature: float = 0.2
     strict_validation: bool = False
     validation_feedback: tuple[str, ...] = ()
+    avoid_question_prompts: tuple[str, ...] = ()
+    excluded_question_keys: tuple[tuple[str, str, str, str], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)

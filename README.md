@@ -95,7 +95,7 @@ If you want CLI commands to use the AI settings from `run_server.bat`, run them 
 ```powershell
 .\run_server.bat status
 .\run_server.bat seed-offline-questions
-.\run_server.bat seed-offline-questions --topics romanian_basics --question-count 10
+.\run_server.bat seed-offline-questions --topics romanian_basics --question-count 100
 ```
 
 ### CLI
@@ -110,7 +110,7 @@ Command reference:
 - `set-progress --level <N> [--difficulty <N>]`: jumps the default learner to an exact roadmap level, optionally forcing a testing difficulty.
 - `sample-content [--topics ...] [--question-count N] [--goal lesson|review|practice]`: runs the Stage 9 quality sampler and reports whether content came from AI or fallback generation.
 - `clear-offline-questions`: deletes every archived offline question without touching learner progress, lesson history, or the wordbank.
-- `seed-offline-questions [--topics ...] [--question-count N] [--goal lesson|review|practice]`: tops up the archived offline question bank. By default it targets the full A1-B2 roadmap and tries to reach at least 10 archived questions per topic.
+- `seed-offline-questions [--topics ...] [--question-count N] [--goal lesson|review|practice]`: tops up the archived offline question bank. By default it targets the full A1-B2 roadmap and tries to reach at least 100 archived questions per topic.
 
 Recommended usage:
 
@@ -127,7 +127,7 @@ python main.py set-progress --level 9 --difficulty 10
 python main.py sample-content --topics romanian_basics b2_core_structures
 python main.py clear-offline-questions
 python main.py seed-offline-questions
-python main.py seed-offline-questions --topics romanian_basics b2_core_structures --question-count 10
+python main.py seed-offline-questions --topics romanian_basics b2_core_structures --question-count 100
 ```
 
 If installed, the console script is also available:
@@ -137,7 +137,7 @@ lumina-romana status
 lumina-romana serve
 ```
 
-`seed-offline-questions` does not guarantee that every topic will reach 10 stored questions. If AI is unavailable, or if only a smaller deterministic fallback pool exists for that topic, the command stores what it can and reports the shortfall. Running the command via `.\run_server.bat ...` is the supported way to ensure the batch-file AI config is applied.
+`seed-offline-questions` does not guarantee that every topic will reach 100 stored questions. If AI is unavailable, or if only a smaller deterministic fallback pool exists for that topic, the command stores what it can and reports the shortfall. Running the command via `.\run_server.bat ...` is the supported way to ensure the batch-file AI config is applied.
 
 ## AI Configuration
 The app reads AI settings from environment variables, including those set in `run_server.bat`.

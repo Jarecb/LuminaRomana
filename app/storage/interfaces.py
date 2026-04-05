@@ -29,6 +29,29 @@ class QuizAttemptRepository(Protocol):
 
     def list_for_user(self, user_id: str, limit: int = 20) -> list[QuizAttempt]: ...
 
+    def save_question_results(
+        self,
+        *,
+        attempt: QuizAttempt,
+        topic_id: str,
+        results: Sequence[tuple[Question, bool]],
+    ) -> None: ...
+
+    def list_recent_correct_question_keys(
+        self,
+        user_id: str,
+        *,
+        recent_attempt_limit: int = 5,
+    ) -> set[tuple[str, str, str, str]]: ...
+
+    def list_recent_correct_question_prompts(
+        self,
+        user_id: str,
+        *,
+        recent_attempt_limit: int = 5,
+        prompt_limit: int = 8,
+    ) -> tuple[str, ...]: ...
+
     def delete_for_user(self, user_id: str) -> None: ...
 
 

@@ -106,6 +106,15 @@ def _question_fingerprint(topic_id: str, question: Question) -> str:
     return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
 
 
+def _question_cooldown_key(topic_id: str, question: Question) -> tuple[str, str, str, str]:
+    return (
+        topic_id,
+        question.question_type.value,
+        question.prompt.strip().casefold(),
+        question.correct_answer.strip().casefold(),
+    )
+
+
 @dataclass(slots=True)
 class SQLiteStorage:
     database_path: Path
@@ -162,6 +171,20 @@ class SQLiteStorage:
                     created_at TEXT NOT NULL,
                     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
                     FOREIGN KEY (lesson_id) REFERENCES lesson_history(lesson_id) ON DELETE CASCADE
+                );
+
+                CREATE TABLE IF NOT EXISTS quiz_question_results (
+                    attempt_id TEXT NOT NULL,
+                    user_id TEXT NOT NULL,
+                    topic TEXT NOT NULL,
+                    question_type TEXT NOT NULL,
+                    prompt TEXT NOT NULL,
+                    correct_answer TEXT NOT NULL,
+                    is_correct INTEGER NOT NULL,
+                    created_at TEXT NOT NULL,
+                    PRIMARY KEY (attempt_id, topic, question_type, prompt, correct_answer),
+                    FOREIGN KEY (attempt_id) REFERENCES quiz_attempts(attempt_id) ON DELETE CASCADE,
+                    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
                 );
 
                 CREATE TABLE IF NOT EXISTS wordbank (
@@ -408,6 +431,117 @@ class SQLiteQuizAttemptRepository:
             )
             for row in rows
         ]
+
+    def save_question_results(
+        self,
+        *,
+        attempt: QuizAttempt,
+        topic_id: str,
+        results: Sequence[tuple[Question, bool]],
+    ) -> None:
+        rows = [
+            (
+                attempt.attempt_id,
+                attempt.user_id,
+                topic_id,
+                question.question_type.value,
+                question.prompt,
+                question.correct_answer,
+                int(is_correct),
+                _serialize_datetime(attempt.created_at) or datetime.now().isoformat(),
+            )
+            for question, is_correct in results
+        ]
+        if not rows:
+            return
+
+        with self.storage.connection() as conn:
+            conn.executemany(
+                """
+                INSERT INTO quiz_question_results (
+                    attempt_id, user_id, topic, question_type, prompt, correct_answer, is_correct, created_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(attempt_id, topic, question_type, prompt, correct_answer) DO UPDATE SET
+                    is_correct = excluded.is_correct,
+                    created_at = excluded.created_at
+                """,
+                rows,
+            )
+
+    def list_recent_correct_question_keys(
+        self,
+        user_id: str,
+        *,
+        recent_attempt_limit: int = 5,
+    ) -> set[tuple[str, str, str, str]]:
+        with self.storage.connection() as conn:
+            rows = conn.execute(
+                """
+                SELECT DISTINCT qqr.topic, qqr.question_type, qqr.prompt, qqr.correct_answer
+                FROM quiz_question_results AS qqr
+                WHERE qqr.user_id = ?
+                  AND qqr.is_correct = 1
+                  AND qqr.attempt_id IN (
+                      SELECT attempt_id
+                      FROM quiz_attempts
+                      WHERE user_id = ?
+                      ORDER BY created_at DESC
+                      LIMIT ?
+                  )
+                """,
+                (user_id, user_id, recent_attempt_limit),
+            ).fetchall()
+
+        return {
+            (
+                row["topic"],
+                row["question_type"],
+                row["prompt"].strip().casefold(),
+                row["correct_answer"].strip().casefold(),
+            )
+            for row in rows
+        }
+
+    def list_recent_correct_question_prompts(
+        self,
+        user_id: str,
+        *,
+        recent_attempt_limit: int = 5,
+        prompt_limit: int = 8,
+    ) -> tuple[str, ...]:
+        with self.storage.connection() as conn:
+            rows = conn.execute(
+                """
+                SELECT qqr.prompt
+                FROM quiz_question_results AS qqr
+                WHERE qqr.user_id = ?
+                  AND qqr.is_correct = 1
+                  AND qqr.attempt_id IN (
+                      SELECT attempt_id
+                      FROM quiz_attempts
+                      WHERE user_id = ?
+                      ORDER BY created_at DESC
+                      LIMIT ?
+                  )
+                ORDER BY qqr.created_at DESC
+                LIMIT ?
+                """,
+                (user_id, user_id, recent_attempt_limit, prompt_limit * 3),
+            ).fetchall()
+
+        prompts: list[str] = []
+        seen: set[str] = set()
+        for row in rows:
+            prompt = row["prompt"].strip()
+            normalized = prompt.casefold()
+            if normalized in seen:
+                continue
+            seen.add(normalized)
+            prompts.append(prompt)
+            if len(prompts) >= prompt_limit:
+                break
+        return tuple(prompts)
 
     def delete_for_user(self, user_id: str) -> None:
         with self.storage.connection() as conn:

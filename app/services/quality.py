@@ -150,6 +150,12 @@ class QualityService:
                         )
                         after_count = updated_count
                         break
+                    if result.source == "fallback" and self._fallback_reason_indicates_quota(result.warnings):
+                        warnings.append(
+                            "Stopped early because the active AI provider reported quota exhaustion."
+                        )
+                        after_count = updated_count
+                        break
                     after_count = updated_count
                     if after_count >= question_count:
                         break
@@ -224,3 +230,6 @@ class QualityService:
         if len(unique_sources) == 1:
             return unique_sources[0]
         return "mixed"
+
+    def _fallback_reason_indicates_quota(self, warnings: Sequence[str]) -> bool:
+        return any("quota" in warning.casefold() for warning in warnings)

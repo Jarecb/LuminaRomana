@@ -955,13 +955,20 @@ class ContentLibrary:
         difficulty: int,
         question_count: int,
         session_goal: str = "lesson",
+        excluded_question_keys: tuple[tuple[str, str, str, str], ...] = (),
     ) -> Lesson:
         topic = self._require_topic(topic_id)
         template = FALLBACK_LESSON_TEMPLATES.get(topic_id)
         if template is None:
             raise ValueError(f"No fallback template is available for topic '{topic_id}'.")
         normalized_difficulty = max(1, min(10, difficulty))
-        question_templates = self._fallback_question_pool(topic_id, template.questions)
+        question_templates = self._fallback_question_pool(
+            topic_id,
+            template.questions,
+            excluded_question_keys=excluded_question_keys,
+        )
+        if not question_templates:
+            question_templates = self._fallback_question_pool(topic_id, template.questions)
         selected_templates = self._select_fallback_questions(question_templates, question_count)
         questions: list[Question] = []
         for index, base in enumerate(selected_templates, start=1):
@@ -997,6 +1004,8 @@ class ContentLibrary:
         templates: tuple[FallbackQuestionTemplate, ...],
         question_count: int,
     ) -> list[FallbackQuestionTemplate]:
+        if not templates or question_count <= 0:
+            return []
         if question_count <= len(templates):
             return random.sample(list(templates), question_count)
         selected = list(templates)
@@ -1008,6 +1017,8 @@ class ContentLibrary:
         self,
         topic_id: str,
         templates: tuple[FallbackQuestionTemplate, ...],
+        *,
+        excluded_question_keys: tuple[tuple[str, str, str, str], ...] = (),
     ) -> tuple[FallbackQuestionTemplate, ...]:
         combined: list[FallbackQuestionTemplate] = list(templates)
         if self._offline_question_repository is not None:
@@ -1018,6 +1029,7 @@ class ContentLibrary:
 
         deduped: list[FallbackQuestionTemplate] = []
         seen: set[tuple[str, str, str]] = set()
+        excluded = set(excluded_question_keys)
         for template in combined:
             key = (
                 template.question_type.value,
@@ -1025,6 +1037,8 @@ class ContentLibrary:
                 template.correct_answer.strip().casefold(),
             )
             if key in seen:
+                continue
+            if (topic_id, *key) in excluded:
                 continue
             seen.add(key)
             deduped.append(template)

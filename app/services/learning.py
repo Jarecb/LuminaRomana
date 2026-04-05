@@ -19,6 +19,7 @@ from .roadmap import ContentLibrary
 DEFAULT_USER_ID = "default-learner"
 PASSING_SCORE = 80.0
 MIN_ATTEMPTS_TO_ADVANCE = 5
+QUESTION_SET_COOLDOWN = 5
 
 LEVEL_PRINCIPLES: dict[str, tuple[str, ...]] = {
     "romanian_basics": (
@@ -363,6 +364,16 @@ class LearningService:
 
             session_goal = session_goal_override or self._infer_session_goal(user_id, topic_id)
             focus_tags = self._topic_focus_tags(user_id, topic_id)
+            excluded_question_keys = tuple(
+                self.quiz_attempt_repository.list_recent_correct_question_keys(
+                    user_id,
+                    recent_attempt_limit=QUESTION_SET_COOLDOWN,
+                )
+            )
+            avoid_question_prompts = self.quiz_attempt_repository.list_recent_correct_question_prompts(
+                user_id,
+                recent_attempt_limit=QUESTION_SET_COOLDOWN,
+            )
 
             print(f"[DEBUG] LearningService: Requesting AI generation via AIService...", flush=True)
 
@@ -372,10 +383,17 @@ class LearningService:
                     topic_id=topic_id,
                     session_goal=session_goal,
                     focus_tags=focus_tags,
+                    avoid_question_prompts=avoid_question_prompts,
+                    excluded_question_keys=excluded_question_keys,
                 )
             )
 
-            lesson = result.lesson
+            lesson, cooldown_warnings = self._apply_recent_question_cooldown(
+                topic_id=topic_id,
+                lesson=result.lesson,
+                session_goal=session_goal,
+                excluded_question_keys=set(excluded_question_keys),
+            )
             if session_goal == "practice" and not self._is_practice_lesson(lesson):
                 lesson.lesson_id = f"practice-{topic_id}-{uuid4()}"
 
@@ -389,7 +407,7 @@ class LearningService:
                 resumed=False,
                 source=result.source,
                 lesson=lesson,
-                warnings=result.warnings,
+                warnings=(*result.warnings, *cooldown_warnings),
             )
 
         except Exception as e:
@@ -541,6 +559,11 @@ class LearningService:
             mistake_tags=list(dict.fromkeys(mistake_tags)),
         )
         self.quiz_attempt_repository.save(attempt)
+        self.quiz_attempt_repository.save_question_results(
+            attempt=attempt,
+            topic_id=lesson.topic,
+            results=tuple((question, item.is_correct) for question, item in zip(lesson.quiz_questions, feedback, strict=True)),
+        )
 
         topic_summary = self.topic_attempt_summary(user_id, lesson.topic)
         if practice_mode:
@@ -713,6 +736,94 @@ class LearningService:
 
     def _answers_match(self, expected: str, submitted: str) -> bool:
         return self._normalize_answer(expected) == self._normalize_answer(submitted)
+
+    def _apply_recent_question_cooldown(
+        self,
+        *,
+        topic_id: str,
+        lesson: Lesson,
+        session_goal: str,
+        excluded_question_keys: set[tuple[str, str, str, str]],
+    ) -> tuple[Lesson, tuple[str, ...]]:
+        if not excluded_question_keys:
+            return lesson, ()
+
+        kept_questions: list[Question] = []
+        blocked_indexes: list[int] = []
+        used_keys: set[tuple[str, str, str, str]] = set()
+        for index, question in enumerate(lesson.quiz_questions):
+            key = self._question_cooldown_key(topic_id, question)
+            if key in excluded_question_keys:
+                blocked_indexes.append(index)
+                continue
+            kept_questions.append(question)
+            used_keys.add(key)
+
+        if not blocked_indexes:
+            return lesson, ()
+
+        replacement_count = len(blocked_indexes)
+        replacement_lesson = self.content_library.build_fallback_lesson(
+            topic_id,
+            difficulty=lesson.difficulty,
+            question_count=max(len(lesson.quiz_questions) * 3, replacement_count),
+            session_goal=session_goal,
+            excluded_question_keys=tuple(excluded_question_keys | used_keys),
+        )
+
+        replacements: list[Question] = []
+        replacement_keys = set(excluded_question_keys) | used_keys
+        for candidate in replacement_lesson.quiz_questions:
+            key = self._question_cooldown_key(topic_id, candidate)
+            if key in replacement_keys:
+                continue
+            replacements.append(candidate)
+            replacement_keys.add(key)
+            if len(replacements) >= replacement_count:
+                break
+
+        if len(replacements) < replacement_count:
+            return lesson, (
+                "Some recently answered-correct questions could not be replaced because too few alternative archived questions were available.",
+            )
+
+        updated_questions = list(lesson.quiz_questions)
+        for index, replacement in zip(blocked_indexes, replacements, strict=True):
+            updated_questions[index] = Question(
+                question_id=updated_questions[index].question_id,
+                prompt=replacement.prompt,
+                question_type=replacement.question_type,
+                difficulty_rating=replacement.difficulty_rating,
+                cefr_band=replacement.cefr_band,
+                correct_answer=replacement.correct_answer,
+                explanation=replacement.explanation,
+                tags=list(replacement.tags),
+                options=list(replacement.options),
+                hint=replacement.hint,
+                rubric=dict(replacement.rubric),
+            )
+
+        refreshed_lesson = Lesson(
+            lesson_id=lesson.lesson_id,
+            topic=lesson.topic,
+            level=lesson.level,
+            cefr_band=lesson.cefr_band,
+            difficulty=lesson.difficulty,
+            explanation_text=lesson.explanation_text,
+            example_sentences=list(lesson.example_sentences),
+            key_rules=list(lesson.key_rules),
+            quiz_questions=updated_questions,
+            created_at=lesson.created_at,
+        )
+        return refreshed_lesson, ("Replaced recently answered-correct questions with different archived questions.",)
+
+    def _question_cooldown_key(self, topic_id: str, question: Question) -> tuple[str, str, str, str]:
+        return (
+            topic_id,
+            question.question_type.value,
+            question.prompt.strip().casefold(),
+            question.correct_answer.strip().casefold(),
+        )
 
     def _normalize_answer(self, value: str) -> str:
         normalized = re.sub(r"\s+", " ", value.strip()).casefold()

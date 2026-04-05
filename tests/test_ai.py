@@ -101,6 +101,10 @@ def test_prompt_builder_uses_topic_difficulty_cefr_and_focus_tags():
     assert "target CEFR band is A2" in prompt.messages[0].content
     assert "Recommended next difficulty from the adaptive engine: 5." in prompt.messages[1].content
     assert "Focus tags from recent learner errors: feminine_endings, object_pronouns." in prompt.messages[1].content
+    assert "The top-level difficulty field is mandatory and must be an integer from 1 to 10." in prompt.messages[1].content
+    assert "Allowed question type values are exactly:" in prompt.messages[1].content
+    assert "Length limits are strict: explanation_text <= 800 characters;" in prompt.messages[1].content
+    assert "Every guided_writing rubric must have at least two named criteria" in prompt.messages[1].content
 
 
 def test_ai_service_retries_transient_failures_and_returns_json(caplog):
@@ -640,6 +644,145 @@ def test_ai_service_normalizes_empty_rubrics_before_validation():
     assert result.lesson.quiz_questions[0].hint is None
 
 
+def test_ai_service_normalizes_missing_difficulty_and_question_type_aliases():
+    provider = StubProvider(
+        responses=[
+            AIProviderResponse(
+                provider_name="stub",
+                model="stub-model",
+                content=json.dumps(
+                    {
+                        "lesson_id": "lesson-1",
+                        "topic": "present_tense_verbs",
+                        "level": "4",
+                        "cefr_band": "a1",
+                        "explanation_text": "Romanian present tense verbs must agree with the subject.",
+                        "example_sentences": [
+                            {"romanian": "Eu merg acasa.", "english": "I go home."}
+                        ],
+                        "key_rules": "Match the verb ending to the subject.",
+                        "questions": [
+                            {
+                                "question_id": "q1",
+                                "question_type": "multiple-choice",
+                                "prompt": "Choose the correct form: Eu ___ acasa.",
+                                "choices": ["merge", "merg", "mergem", "mergeti"],
+                                "answer": "merg",
+                                "explanation": "The subject 'eu' takes the first-person singular form 'merg'.",
+                                "tags": "present_tense_verbs",
+                                "hint": "",
+                                "rubric": [],
+                            }
+                        ],
+                    }
+                ),
+            )
+        ]
+    )
+    content_library = ContentLibrary()
+    service = AIService(
+        provider=provider,
+        prompt_builder=PromptBuilder(),
+        content_library=content_library,
+        difficulty_manager=DifficultyManager(content_library),
+        content_validator=ContentValidator(),
+        logger=logging.getLogger("test.ai.normalize.aliases"),
+        max_retries=1,
+    )
+
+    result = service.generate_lesson(
+        LessonGenerationRequest(
+            user_progress=UserProgress(
+                user_id="learner-1",
+                current_level=4,
+                current_cefr_band=CEFRBand.A1,
+                current_difficulty=4,
+            ),
+            topic_id="present_tense_verbs",
+            question_count=1,
+        )
+    )
+
+    assert result.source == "ai"
+    assert result.lesson.difficulty == 4
+    assert result.lesson.cefr_band == CEFRBand.A1
+    assert result.lesson.quiz_questions[0].difficulty_rating == 4
+    assert result.lesson.quiz_questions[0].question_type.value == "multiple_choice"
+    assert result.lesson.quiz_questions[0].options == ["merge", "merg", "mergem", "mergeti"]
+
+
+def test_ai_service_trims_overlong_text_fields_before_validation():
+    provider = StubProvider(
+        responses=[
+            AIProviderResponse(
+                provider_name="stub",
+                model="stub-model",
+                content=json.dumps(
+                    {
+                        "lesson_id": "lesson-1",
+                        "topic": "present_tense_verbs",
+                        "level": 4,
+                        "cefr_band": "A1",
+                        "difficulty": 4,
+                        "explanation_text": "A" * 840,
+                        "example_sentences": [
+                            {
+                                "romanian": "Eu merg acasa.",
+                                "english": "B" * 220,
+                            }
+                        ],
+                        "key_rules": ["Match the verb ending to the subject."],
+                        "quiz_questions": [
+                            {
+                                "question_id": "q1",
+                                "type": "multiple_choice",
+                                "prompt": "C" * 340,
+                                "options": ["merge", "merg", "mergem", "mergeti"],
+                                "correct_answer": "merg",
+                                "explanation": "D" * 520,
+                                "difficulty": 4,
+                                "tags": ["present_tense_verbs"],
+                                "hint": "Keep it short.",
+                                "rubric": {},
+                                "cefr_band": "A1",
+                            }
+                        ],
+                    }
+                ),
+            )
+        ]
+    )
+    content_library = ContentLibrary()
+    service = AIService(
+        provider=provider,
+        prompt_builder=PromptBuilder(),
+        content_library=content_library,
+        difficulty_manager=DifficultyManager(content_library),
+        content_validator=ContentValidator(),
+        logger=logging.getLogger("test.ai.normalize.lengths"),
+        max_retries=1,
+    )
+
+    result = service.generate_lesson(
+        LessonGenerationRequest(
+            user_progress=UserProgress(
+                user_id="learner-1",
+                current_level=4,
+                current_cefr_band=CEFRBand.A1,
+                current_difficulty=4,
+            ),
+            topic_id="present_tense_verbs",
+            question_count=1,
+        )
+    )
+
+    assert result.source == "ai"
+    assert len(result.lesson.explanation_text) <= 800
+    assert len(result.lesson.example_sentences[0].english) <= 180
+    assert len(result.lesson.quiz_questions[0].prompt) <= 320
+    assert len(result.lesson.quiz_questions[0].explanation) <= 500
+
+
 def test_gemini_provider_uses_system_instruction_and_json_mime_type(monkeypatch):
     captured = {}
 
@@ -694,3 +837,22 @@ def test_gemini_provider_uses_system_instruction_and_json_mime_type(monkeypatch)
     assert captured["body"]["contents"][0]["parts"][0]["text"] == "Generate a lesson for nouns_and_articles."
     assert "romanian_basics" not in json.dumps(captured["body"])
     assert response.provider_name == "gemini"
+
+
+def test_gemini_provider_treats_connection_reset_as_transient(monkeypatch):
+    def fake_urlopen(http_request, timeout):
+        raise ConnectionResetError("connection reset by peer")
+
+    monkeypatch.setattr(urllib_request, "urlopen", fake_urlopen)
+
+    from app.ai.providers import GeminiAIProvider
+
+    provider = GeminiAIProvider(api_key="test-key", model="gemini-2.5-flash")
+
+    with pytest.raises(TransientAIError) as exc_info:
+        provider.generate_json(
+            messages=(AIMessage(role="user", content="Generate valid JSON."),),
+            temperature=0.2,
+        )
+
+    assert "connection reset by peer" in str(exc_info.value)

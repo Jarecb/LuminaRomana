@@ -14,6 +14,7 @@
 - [Stage 8: B2 Learning Features](#stage-8-b2-learning-features)
 - [Stage 9: Quality Hardening](#stage-9-quality-hardening)
 - [Stage 10: Packaging and Deployment](#stage-10-packaging-and-deployment)
+- [Stage 11: Incorrect Answer Mastery Gate](#stage-11-incorrect-answer-mastery-gate)
 - [Recommended Build Order](#recommended-build-order)
 - [Milestones](#milestones)
 - [Immediate Next Steps](#immediate-next-steps)
@@ -435,6 +436,28 @@ Notes:
 - The supported deployment paths are now:
   source checkout, editable install, built wheel install, and optional Docker container for the web UI
 
+## Stage 11: Incorrect Answer Mastery Gate
+Status: planned.
+
+Objective: prevent learners from progressing past unresolved mistakes by forcing explicit recovery of previously incorrect answers.
+
+Deliverables:
+- Track any question where the learner answered incorrectly
+- Persist the outstanding incorrect-answer set across lesson sessions
+- Before progressing to the next lesson level, present a question set that contains all currently outstanding incorrect answers
+- Block progression to the next lesson level until every previously incorrect answer has later been answered correctly
+- Remove an item from the outstanding incorrect-answer set only after it has been answered correctly
+
+Exit criteria:
+- Incorrectly answered questions are recorded and remain pending across later sessions
+- When a learner would otherwise advance to the next lesson level, the app instead serves a remediation set containing all outstanding incorrect answers
+- Progression to the next lesson level occurs only after all pending incorrect answers have been answered correctly
+- Once a previously incorrect answer is answered correctly, it no longer blocks progression
+
+Notes:
+- This stage adds a mastery gate on top of normal level progression
+- The requirement applies even if the learner has otherwise met the score and attempt thresholds for advancement
+
 ## Recommended Build Order
 1. Stage 0
 2. Stage 1
@@ -447,6 +470,7 @@ Notes:
 9. Stage 8
 10. Stage 9
 11. Stage 10
+12. Stage 11
 
 Validation is placed before heavy AI reliance on purpose. Without that sequencing, the project will generate content faster than it can trust it.
 
@@ -456,6 +480,7 @@ Validation is placed before heavy AI reliance on purpose. Without that sequencin
 - Milestone 3: B1 expansion
 - Milestone 4: B2 completion
 - Milestone 5: packaging and deployment readiness
+- Milestone 6: incorrect-answer mastery gating
 
 ## Immediate Next Steps
 1. Add a real learner-facing placement-test flow in the web UI so the existing placement engine is usable without developer tooling.

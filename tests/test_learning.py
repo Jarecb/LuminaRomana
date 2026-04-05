@@ -9,6 +9,7 @@ from app.services import ContentLibrary, DifficultyManager
 from app.services.learning import LearningService
 from app.storage import (
     SQLiteLessonRepository,
+    SQLiteOfflineQuestionRepository,
     SQLiteQuizAttemptRepository,
     SQLiteStorage,
     SQLiteUserProgressRepository,
@@ -20,7 +21,8 @@ from app.validation import ContentValidator
 def build_learning_service(tmp_path):
     storage = SQLiteStorage(tmp_path / "lumina_romana.db")
     storage.initialize()
-    content_library = ContentLibrary()
+    offline_repository = SQLiteOfflineQuestionRepository(storage)
+    content_library = ContentLibrary(offline_question_repository=offline_repository)
     difficulty_manager = DifficultyManager(content_library)
     return LearningService(
         user_progress_repository=SQLiteUserProgressRepository(storage),
@@ -37,7 +39,23 @@ def build_learning_service(tmp_path):
             content_validator=ContentValidator(),
             logger=logging.getLogger("test.learning"),
             max_retries=1,
+            offline_question_repository=offline_repository,
         ),
+    )
+
+
+def build_offline_question(topic_id: str, index: int) -> Question:
+    return Question(
+        question_id=f"offline-{topic_id}-{index}",
+        prompt=f"Unique prompt {index}: choose the correct form for {topic_id}.",
+        question_type=QuestionType.MULTIPLE_CHOICE,
+        difficulty_rating=2,
+        cefr_band=CEFRBand.A1,
+        correct_answer=f"answer-{index}",
+        explanation=f"Explanation for question {index}.",
+        tags=[topic_id],
+        options=[f"answer-{index}", f"distractor-{index}-a", f"distractor-{index}-b"],
+        hint="Pick the exact matching answer.",
     )
 
 
@@ -410,3 +428,35 @@ def test_start_or_resume_lesson_session_skips_saved_lesson_with_missing_sentence
 
     assert session.lesson is not None
     assert session.lesson.lesson_id != "broken-sentence-lesson"
+
+
+def test_correctly_answered_questions_are_excluded_for_next_five_question_sets(tmp_path):
+    service = build_learning_service(tmp_path)
+    storage = SQLiteStorage(tmp_path / "lumina_romana.db")
+    storage.initialize()
+    offline_repository = SQLiteOfflineQuestionRepository(storage)
+    offline_repository.upsert_questions(
+        "romanian_basics",
+        [build_offline_question("romanian_basics", index) for index in range(1, 31)],
+    )
+
+    first_session = service.start_topic_lesson("romanian_basics")
+    assert first_session.lesson is not None
+    first_prompts = {question.prompt for question in first_session.lesson.quiz_questions}
+    first_answers = {
+        question.question_id: question.correct_answer
+        for question in first_session.lesson.quiz_questions
+    }
+    service.submit_quiz(first_session.lesson.lesson_id, first_answers)
+
+    future_prompts: set[str] = set()
+    for _ in range(5):
+        lesson_session = service.start_topic_lesson("romanian_basics")
+        assert lesson_session.lesson is not None
+        future_prompts.update(question.prompt for question in lesson_session.lesson.quiz_questions)
+        service.submit_quiz(
+            lesson_session.lesson.lesson_id,
+            {question.question_id: "" for question in lesson_session.lesson.quiz_questions},
+        )
+
+    assert not (first_prompts & future_prompts)

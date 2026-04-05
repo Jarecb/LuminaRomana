@@ -4,6 +4,7 @@ from abc import ABC, abstractmethod
 import json
 import re
 import socket
+import ssl
 from typing import Any
 from urllib import error, request
 
@@ -88,7 +89,7 @@ class AIChatProvider(BaseAIProvider):
             if exc.code in {408, 409, 429, 500, 502, 503, 504}:
                 raise TransientAIError(f"Transient provider error {exc.code}: {details}") from exc
             raise AIProviderError(f"Provider error {exc.code}: {details}") from exc
-        except (error.URLError, TimeoutError, socket.timeout) as exc:
+        except (error.URLError, TimeoutError, socket.timeout, ssl.SSLError, OSError) as exc:
             raise TransientAIError(f"Transient network error: {exc}") from exc
 
         try:
@@ -214,7 +215,7 @@ class GeminiAIProvider(BaseAIProvider):
             if exc.code in {408, 429, 500, 503, 504}:
                 raise TransientAIError(f"Gemini transient error {exc.code}: {details}") from exc
             raise AIProviderError(f"Gemini provider error {exc.code}: {details}") from exc
-        except (error.URLError, TimeoutError, socket.timeout) as exc:
+        except (error.URLError, TimeoutError, socket.timeout, ssl.SSLError, OSError) as exc:
             raise TransientAIError(f"Gemini network error: {exc}") from exc
 
         try:

@@ -59,7 +59,8 @@
       "question_count": 5
     },
     "required_snippets": [
-      "If the target CEFR band is B1 or above",
+      "If the target CEFR band is B1 or above, every example_sentences item must itself be multi-clause or multi-sentence",
+      "For B1-B2 examples, use connected context with punctuation or connectors such as dar, deoarece, desi, ca sa, or in timp ce.",
       "Maximum connected context sentences per item: 2.",
       "Validation feedback from previous failed attempts: none."
     ]
@@ -98,7 +99,8 @@
       "question_count": 5
     },
     "required_snippets": [
-      "If the target CEFR band is B2, include at least one reading_comprehension task and one guided_writing task",
+      "If the target CEFR band is B2, include at least one reading_comprehension task and one guided_writing task.",
+      "Every guided_writing rubric must have at least two named criteria",
       "B2 prompts should support opinion, comparison, justification, reported speech, connector control, or passive and impersonal structures",
       "Focus tags from recent learner errors: reported_speech, advanced_connectors."
     ]

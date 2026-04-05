@@ -159,3 +159,15 @@ def test_seed_offline_questions_populates_bank_for_requested_topics(capsys, monk
     assert "- b2_core_structures:" in captured.out
     assert offline_repository.count_for_topic("romanian_basics") >= 1
     assert offline_repository.count_for_topic("b2_core_structures") >= 1
+
+
+def test_seed_offline_questions_defaults_to_100_per_topic(capsys, monkeypatch, tmp_path):
+    monkeypatch.setenv("LUMINA_ROMANA_ENV", "test")
+    monkeypatch.setenv("LUMINA_ROMANA_DATA_DIR", str(tmp_path / "data"))
+
+    exit_code = main(["seed-offline-questions", "--topics", "romanian_basics"])
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert "- romanian_basics:" in captured.out
+    assert "requested minimum was 100" in captured.out

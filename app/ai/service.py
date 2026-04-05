@@ -4,7 +4,7 @@ import json
 import logging
 import time
 from dataclasses import dataclass, replace
-from typing import Sequence
+from typing import Any, Sequence
 
 from app.ai.prompts import PromptBuilder
 from app.ai.providers import BaseAIProvider, DisabledAIProvider
@@ -33,6 +33,14 @@ class AIServiceMetricsSnapshot:
     transient_failures: int
     provider_failures: int
     json_parse_failures: int
+
+
+TEXT_LIMITS = {
+    "explanation_text": 800,
+    "example_sentence": 180,
+    "question_prompt": 320,
+    "question_explanation": 500,
+}
 
 
 class AIService:
@@ -131,7 +139,11 @@ class AIService:
 
                     try:
                         response = provider.generate_json(prompt.messages, temperature=current_request.temperature)
-                        payload = self._normalize_provider_payload(json.loads(response.content))
+                        payload = self._normalize_provider_payload(
+                            json.loads(response.content),
+                            default_difficulty=constraints.difficulty,
+                            default_cefr_band=topic.cefr_band.value,
+                        )
 
                         lesson = self.content_validator.validate_lesson_payload(
                             payload,
@@ -181,7 +193,10 @@ class AIService:
                         failure_reasons.append(f"[{provider.provider_name}] {str(exc)}")
 
                         if isinstance(exc, ContentValidationError):
-                            feedback = tuple(issue.message for issue in exc.issues[:5])
+                            feedback = tuple(
+                                self._format_validation_feedback(issue)
+                                for issue in exc.issues[:5]
+                            )
                             current_request = replace(current_request, strict_validation=True,
                                                       validation_feedback=feedback)
 
@@ -208,6 +223,9 @@ class AIService:
             return self._trigger_fallback(request, None, f"Pre-generation crash: {str(e)}")
 
     def _update_failure_metrics(self, exc: Exception) -> None:
+        if isinstance(exc, QuotaExceededAIError):
+            self._metrics["transient_failures"] += 1
+            return
         self._metrics["retries_attempted"] += 1
         if isinstance(exc, TransientAIError):
             self._metrics["transient_failures"] += 1
@@ -227,6 +245,7 @@ class AIService:
                 difficulty=fallback_difficulty,
                 question_count=request.question_count,
                 session_goal=request.session_goal,
+                excluded_question_keys=request.excluded_question_keys,
             )
             return LessonGenerationResult(
                 lesson=fallback_lesson,
@@ -265,21 +284,87 @@ class AIService:
                 exc_info=True,
             )
 
-    def _normalize_provider_payload(self, payload):
+    def _normalize_provider_payload(
+        self,
+        payload: Any,
+        *,
+        default_difficulty: int | None = None,
+        default_cefr_band: str | None = None,
+    ) -> Any:
         if not isinstance(payload, dict):
             return payload
 
-        quiz_questions = payload.get("quiz_questions")
-        if not isinstance(quiz_questions, list):
-            return payload
-
         normalized_payload = dict(payload)
+        if "quiz_questions" not in normalized_payload and isinstance(normalized_payload.get("questions"), list):
+            normalized_payload["quiz_questions"] = normalized_payload["questions"]
+        if "example_sentences" not in normalized_payload and isinstance(normalized_payload.get("examples"), list):
+            normalized_payload["example_sentences"] = normalized_payload["examples"]
+        if "difficulty" not in normalized_payload:
+            if "difficulty_rating" in normalized_payload:
+                normalized_payload["difficulty"] = normalized_payload["difficulty_rating"]
+            elif default_difficulty is not None:
+                normalized_payload["difficulty"] = default_difficulty
+        if "key_rules" in normalized_payload and isinstance(normalized_payload["key_rules"], str):
+            normalized_payload["key_rules"] = [normalized_payload["key_rules"]]
+        if "difficulty" in normalized_payload:
+            normalized_payload["difficulty"] = self._coerce_int(normalized_payload["difficulty"])
+        if "level" in normalized_payload:
+            normalized_payload["level"] = self._coerce_int(normalized_payload["level"])
+        if "cefr_band" in normalized_payload:
+            normalized_payload["cefr_band"] = self._normalize_cefr_band(normalized_payload["cefr_band"])
+        if isinstance(normalized_payload.get("explanation_text"), str):
+            normalized_payload["explanation_text"] = self._trim_text(
+                normalized_payload["explanation_text"],
+                TEXT_LIMITS["explanation_text"],
+            )
+
+        examples = normalized_payload.get("example_sentences")
+        if isinstance(examples, list):
+            normalized_examples = []
+            for example in examples:
+                if not isinstance(example, dict):
+                    normalized_examples.append(example)
+                    continue
+                normalized_example = dict(example)
+                if isinstance(normalized_example.get("romanian"), str):
+                    normalized_example["romanian"] = self._trim_text(
+                        normalized_example["romanian"],
+                        TEXT_LIMITS["example_sentence"],
+                    )
+                if isinstance(normalized_example.get("english"), str):
+                    normalized_example["english"] = self._trim_text(
+                        normalized_example["english"],
+                        TEXT_LIMITS["example_sentence"],
+                    )
+                normalized_examples.append(normalized_example)
+            normalized_payload["example_sentences"] = normalized_examples
+
+        quiz_questions = normalized_payload.get("quiz_questions")
+        if not isinstance(quiz_questions, list):
+            return normalized_payload
+
+        lesson_difficulty = normalized_payload.get("difficulty")
         normalized_questions = []
         for raw_question in quiz_questions:
             if not isinstance(raw_question, dict):
                 normalized_questions.append(raw_question)
                 continue
             question = dict(raw_question)
+            self._apply_missing_alias(question, "type", ("question_type",))
+            self._apply_missing_alias(question, "options", ("choices",))
+            self._apply_missing_alias(question, "correct_answer", ("answer", "reference_answer", "sample_answer"))
+            self._apply_missing_alias(question, "difficulty", ("difficulty_rating",))
+            self._apply_missing_alias(question, "cefr_band", ("cefr", "cefr_level"))
+            if "difficulty" not in question and isinstance(lesson_difficulty, int):
+                question["difficulty"] = lesson_difficulty
+            if "difficulty" in question:
+                question["difficulty"] = self._coerce_int(question["difficulty"])
+            if "cefr_band" not in question and default_cefr_band is not None:
+                question["cefr_band"] = default_cefr_band
+            elif "cefr_band" in question:
+                question["cefr_band"] = self._normalize_cefr_band(question["cefr_band"])
+            if "type" in question:
+                question["type"] = self._normalize_question_type(question["type"])
             if question.get("rubric") in (None, "", []):
                 question["rubric"] = {}
             if question.get("options") is None:
@@ -288,10 +373,105 @@ class AIService:
                 question["tags"] = [question["tags"]]
             if question.get("hint") == "":
                 question["hint"] = None
+            if isinstance(question.get("prompt"), str):
+                question["prompt"] = self._trim_text(question["prompt"], TEXT_LIMITS["question_prompt"])
+            if isinstance(question.get("explanation"), str):
+                question["explanation"] = self._trim_text(
+                    question["explanation"],
+                    TEXT_LIMITS["question_explanation"],
+                )
             normalized_questions.append(question)
 
         normalized_payload["quiz_questions"] = normalized_questions
         return normalized_payload
+
+    def _apply_missing_alias(self, payload: dict[str, Any], key: str, aliases: Sequence[str]) -> None:
+        if key in payload:
+            return
+        for alias in aliases:
+            if alias in payload:
+                payload[key] = payload[alias]
+                return
+
+    def _coerce_int(self, value: Any) -> Any:
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, int):
+            return value
+        if isinstance(value, str):
+            stripped = value.strip()
+            if stripped.isdigit():
+                return int(stripped)
+        return value
+
+    def _normalize_cefr_band(self, value: Any) -> Any:
+        if isinstance(value, str):
+            return value.strip().upper()
+        return value
+
+    def _normalize_question_type(self, value: Any) -> Any:
+        if not isinstance(value, str):
+            return value
+
+        normalized = value.strip().casefold().replace("-", "_").replace(" ", "_")
+        while "__" in normalized:
+            normalized = normalized.replace("__", "_")
+
+        aliases = {
+            "multiple_choice": "multiple_choice",
+            "mcq": "multiple_choice",
+            "english_to_romanian": "english_to_romanian_translation",
+            "english_to_romanian_translation": "english_to_romanian_translation",
+            "translate_to_romanian": "english_to_romanian_translation",
+            "translation_to_romanian": "english_to_romanian_translation",
+            "en_to_ro": "english_to_romanian_translation",
+            "romanian_to_english": "romanian_to_english_translation",
+            "romanian_to_english_translation": "romanian_to_english_translation",
+            "translate_to_english": "romanian_to_english_translation",
+            "translation_to_english": "romanian_to_english_translation",
+            "ro_to_en": "romanian_to_english_translation",
+            "fill_in_the_blank": "fill_in_the_blank",
+            "fill_in_blank": "fill_in_the_blank",
+            "fill_in_the_blanks": "fill_in_the_blank",
+            "cloze": "fill_in_the_blank",
+            "gap_fill": "fill_in_the_blank",
+            "grammar_error_identification": "grammar_error_identification",
+            "error_identification": "grammar_error_identification",
+            "grammar_error": "grammar_error_identification",
+            "sentence_transformation": "sentence_transformation",
+            "sentence_rewrite": "sentence_transformation",
+            "rewrite_sentence": "sentence_transformation",
+            "guided_writing": "guided_writing",
+            "guided_composition": "guided_writing",
+            "writing_prompt": "guided_writing",
+            "reading_comprehension": "reading_comprehension",
+            "reading_task": "reading_comprehension",
+            "dialogue_completion": "dialogue_completion",
+            "complete_the_dialogue": "dialogue_completion",
+            "conversation_completion": "dialogue_completion",
+        }
+        return aliases.get(normalized, normalized)
+
+    def _trim_text(self, value: str, limit: int) -> str:
+        stripped = value.strip()
+        if len(stripped) <= limit:
+            return stripped
+
+        candidate = stripped[:limit].rstrip()
+        boundary = max(
+            candidate.rfind(". "),
+            candidate.rfind("? "),
+            candidate.rfind("! "),
+            candidate.rfind("; "),
+        )
+        if boundary >= max(0, limit - 80):
+            return candidate[: boundary + 1].rstrip()
+        return candidate
+
+    def _format_validation_feedback(self, issue) -> str:
+        if "Text exceeds maximum length of" in issue.message:
+            return f"{issue.path}: {issue.message}"
+        return f"{issue.path}: {issue.message}"
 
     def _provider_is_available(self, provider: BaseAIProvider) -> bool:
         cooldown_until = self._provider_cooldowns_until.get(provider.provider_name)
