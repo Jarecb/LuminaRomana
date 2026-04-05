@@ -35,6 +35,7 @@ class QuizAttemptRepository(Protocol):
         attempt: QuizAttempt,
         topic_id: str,
         results: Sequence[tuple[Question, bool]],
+        track_outstanding: bool = True,
     ) -> None: ...
 
     def list_recent_correct_question_keys(
@@ -51,6 +52,13 @@ class QuizAttemptRepository(Protocol):
         recent_attempt_limit: int = 5,
         prompt_limit: int = 8,
     ) -> tuple[str, ...]: ...
+
+    def list_pending_incorrect_questions(
+        self,
+        user_id: str,
+        *,
+        topic_id: str | None = None,
+    ) -> list[Question]: ...
 
     def delete_for_user(self, user_id: str) -> None: ...
 

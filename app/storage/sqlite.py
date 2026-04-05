@@ -89,6 +89,40 @@ def _lesson_from_record(payload: str) -> Lesson:
     )
 
 
+def _question_to_record(question: Question) -> str:
+    payload = {
+        "question_id": question.question_id,
+        "prompt": question.prompt,
+        "question_type": question.question_type.value,
+        "difficulty_rating": question.difficulty_rating,
+        "cefr_band": question.cefr_band.value,
+        "correct_answer": question.correct_answer,
+        "explanation": question.explanation,
+        "tags": question.tags,
+        "options": question.options,
+        "hint": question.hint,
+        "rubric": question.rubric,
+    }
+    return json.dumps(payload, ensure_ascii=False)
+
+
+def _question_from_record(payload: str) -> Question:
+    raw = json.loads(payload)
+    return Question(
+        question_id=raw["question_id"],
+        prompt=raw["prompt"],
+        question_type=QuestionType(raw["question_type"]),
+        difficulty_rating=raw["difficulty_rating"],
+        cefr_band=CEFRBand(raw["cefr_band"]),
+        correct_answer=raw["correct_answer"],
+        explanation=raw["explanation"],
+        tags=list(raw["tags"]),
+        options=list(raw["options"]),
+        hint=raw["hint"],
+        rubric=dict(raw["rubric"]),
+    )
+
+
 def _question_fingerprint(topic_id: str, question: Question) -> str:
     payload = {
         "topic": topic_id,
@@ -113,6 +147,15 @@ def _question_cooldown_key(topic_id: str, question: Question) -> tuple[str, str,
         question.prompt.strip().casefold(),
         question.correct_answer.strip().casefold(),
     )
+
+
+def _question_history_key(topic_id: str, question: Question) -> str:
+    serialized = json.dumps(
+        _question_cooldown_key(topic_id, question),
+        ensure_ascii=False,
+        sort_keys=True,
+    )
+    return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
 
 
 @dataclass(slots=True)
@@ -184,6 +227,20 @@ class SQLiteStorage:
                     created_at TEXT NOT NULL,
                     PRIMARY KEY (attempt_id, topic, question_type, prompt, correct_answer),
                     FOREIGN KEY (attempt_id) REFERENCES quiz_attempts(attempt_id) ON DELETE CASCADE,
+                    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+                );
+
+                CREATE TABLE IF NOT EXISTS pending_incorrect_questions (
+                    user_id TEXT NOT NULL,
+                    question_key TEXT NOT NULL,
+                    topic TEXT NOT NULL,
+                    question_type TEXT NOT NULL,
+                    prompt TEXT NOT NULL,
+                    correct_answer TEXT NOT NULL,
+                    payload TEXT NOT NULL,
+                    first_incorrect_at TEXT NOT NULL,
+                    last_seen_at TEXT NOT NULL,
+                    PRIMARY KEY (user_id, question_key),
                     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
                 );
 
@@ -438,7 +495,9 @@ class SQLiteQuizAttemptRepository:
         attempt: QuizAttempt,
         topic_id: str,
         results: Sequence[tuple[Question, bool]],
+        track_outstanding: bool = True,
     ) -> None:
+        timestamp = _serialize_datetime(attempt.created_at) or datetime.now().isoformat()
         rows = [
             (
                 attempt.attempt_id,
@@ -448,7 +507,7 @@ class SQLiteQuizAttemptRepository:
                 question.prompt,
                 question.correct_answer,
                 int(is_correct),
-                _serialize_datetime(attempt.created_at) or datetime.now().isoformat(),
+                timestamp,
             )
             for question, is_correct in results
         ]
@@ -468,6 +527,57 @@ class SQLiteQuizAttemptRepository:
                 """,
                 rows,
             )
+            if not track_outstanding:
+                return
+
+            resolved_rows: list[tuple[str, str]] = []
+            pending_rows: list[tuple[str, str, str, str, str, str, str, str, str]] = []
+            for question, is_correct in results:
+                question_key = _question_history_key(topic_id, question)
+                if is_correct:
+                    resolved_rows.append((attempt.user_id, question_key))
+                    continue
+                pending_rows.append(
+                    (
+                        attempt.user_id,
+                        question_key,
+                        topic_id,
+                        question.question_type.value,
+                        question.prompt,
+                        question.correct_answer,
+                        _question_to_record(question),
+                        timestamp,
+                        timestamp,
+                    )
+                )
+
+            if resolved_rows:
+                conn.executemany(
+                    """
+                    DELETE FROM pending_incorrect_questions
+                    WHERE user_id = ? AND question_key = ?
+                    """,
+                    resolved_rows,
+                )
+
+            if pending_rows:
+                conn.executemany(
+                    """
+                    INSERT INTO pending_incorrect_questions (
+                        user_id, question_key, topic, question_type, prompt, correct_answer,
+                        payload, first_incorrect_at, last_seen_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(user_id, question_key) DO UPDATE SET
+                        topic = excluded.topic,
+                        question_type = excluded.question_type,
+                        prompt = excluded.prompt,
+                        correct_answer = excluded.correct_answer,
+                        payload = excluded.payload,
+                        last_seen_at = excluded.last_seen_at
+                    """,
+                    pending_rows,
+                )
 
     def list_recent_correct_question_keys(
         self,
@@ -543,9 +653,34 @@ class SQLiteQuizAttemptRepository:
                 break
         return tuple(prompts)
 
+    def list_pending_incorrect_questions(
+        self,
+        user_id: str,
+        *,
+        topic_id: str | None = None,
+    ) -> list[Question]:
+        query = """
+            SELECT payload
+            FROM pending_incorrect_questions
+            WHERE user_id = ?
+        """
+        params: tuple[object, ...]
+        if topic_id is None:
+            params = (user_id,)
+        else:
+            query += " AND topic = ?"
+            params = (user_id, topic_id)
+        query += " ORDER BY first_incorrect_at ASC, prompt ASC"
+
+        with self.storage.connection() as conn:
+            rows = conn.execute(query, params).fetchall()
+
+        return [_question_from_record(row["payload"]) for row in rows]
+
     def delete_for_user(self, user_id: str) -> None:
         with self.storage.connection() as conn:
             conn.execute("DELETE FROM quiz_attempts WHERE user_id = ?", (user_id,))
+            conn.execute("DELETE FROM pending_incorrect_questions WHERE user_id = ?", (user_id,))
 
 
 @dataclass(slots=True)

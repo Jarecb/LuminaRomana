@@ -1006,12 +1006,8 @@ class ContentLibrary:
     ) -> list[FallbackQuestionTemplate]:
         if not templates or question_count <= 0:
             return []
-        if question_count <= len(templates):
-            return random.sample(list(templates), question_count)
-        selected = list(templates)
-        while len(selected) < question_count:
-            selected.extend(random.sample(list(templates), len(templates)))
-        return selected[:question_count]
+        requested_count = min(question_count, len(templates))
+        return random.sample(list(templates), requested_count)
 
     def _fallback_question_pool(
         self,

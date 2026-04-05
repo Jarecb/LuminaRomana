@@ -48,7 +48,7 @@ The product is intended to teach Romanian grammar progressively, with specific a
 ## 2.1 Current Implementation Baseline
 The implementation must remain consistent with the staged delivery plan in `plan.md`.
 
-Completed plan stages as of 2026-04-04:
+Completed plan stages as of 2026-04-05:
 
 - Stage 0: Foundation and project setup
 - Stage 1: Core domain model and local persistence
@@ -61,6 +61,7 @@ Completed plan stages as of 2026-04-04:
 - Stage 8: B2 learning features
 - Stage 9: Quality hardening
 - Stage 10: Packaging and deployment
+- Stage 11: Incorrect-answer mastery gate
 
 This means the current baseline already includes:
 
@@ -78,6 +79,7 @@ This means the current baseline already includes:
 - CLI maintenance flows for the offline question bank, including full-bank clearing and A1-B2 top-up seeding
 - Stage 9 AI-quality metrics, prompt regression coverage, and a content-sampling workflow
 - Stage 10 packaging and deployment assets including build metadata, a Windows startup script, and optional containerization
+- Stage 11 persistent incorrect-answer tracking, remediation lessons before level advancement, and lesson-level duplicate-question prevention
 
 Subsequent work defined in this specification must build on that baseline rather than re-specifying it as hypothetical. In particular, Stage 5 validation work should now integrate with the existing AI service and prompt builder instead of inventing a new content-generation entrypoint.
 
@@ -115,6 +117,8 @@ After each quiz, the system updates mastery scores and decides whether to:
 The long-term progression target is B2. The learner experience must therefore support not only isolated grammar drills, but also cumulative practice with reading, listening-ready text prompts, structured writing prompts, and multi-step grammar integration appropriate for upper-intermediate learners.
 
 For the current A1-A2 MVP loop, advancement through a roadmap topic should require repeated demonstrated control rather than a single strong attempt. The current baseline uses multiple question sets per topic and only advances after both the latest set and the running topic average meet the configured mastery threshold.
+
+In the current baseline, score-based topic completion is still not sufficient on its own: if a learner has unresolved previously incorrect answers for the topic, the system serves a remediation set containing those pending questions and blocks advancement until they are later answered correctly.
 
 ## 6. Learning Roadmap
 The app must teach Romanian in a controlled sequence. AI content generation must stay inside the current roadmap stage unless the adaptive engine explicitly advances the learner.
@@ -272,6 +276,7 @@ Rules:
 - If a user scores below 60 percent, the app must generate a review session focused on missed grammar rules before normal progression resumes.
 - Scores from 60 to 90 percent should generally keep difficulty stable, with limited novelty.
 - Topic advancement in the current MVP should require at least five completed question sets for the current topic, with the latest set scoring at least 80 percent and the average across all completed sets for that topic also at least 80 percent.
+- Even after those score thresholds are met, the learner must still clear any pending previously incorrect answers for the topic before the next level unlocks.
 - At B1 and B2 stages, adaptation must consider both grammar accuracy and ability to handle longer connected contexts.
 - The system must not advance a user into B2-target content if prerequisite B1 grammar mastery remains below a configured threshold.
 
@@ -283,6 +288,7 @@ A review session must:
 - Include hints or partial scaffolding
 - Re-test mastery after review
 - Continue contributing to the running per-topic average used for topic advancement decisions
+- When score-based advancement would otherwise occur, switch to a remediation set containing every still-pending previously incorrect question for that topic
 
 ### 7.5 Placement Test
 The system should support an initial placement test that:
@@ -596,6 +602,7 @@ Responsibility:
 - Skill scores
 - Wordbank entries
 - Archived offline AI-generated questions
+- Pending incorrect-answer questions that still block advancement
 - Offline-question-bank maintenance state such as total archived-question counts, which are surfaced through the `status` CLI output
 
 ### 14.2 Current SQLite Schema Shape
@@ -659,6 +666,17 @@ Responsibility:
 - `created_at` timestamp
 - `last_seen_at` timestamp
 
+#### `pending_incorrect_questions`
+- `user_id` UUID
+- `question_key` text
+- `topic` text
+- `question_type` text
+- `prompt` text
+- `correct_answer` text
+- `payload` JSON text
+- `first_incorrect_at` timestamp
+- `last_seen_at` timestamp
+
 ## 15. AI Prompting Specification
 
 ### 15.1 System Prompt Requirements
@@ -707,8 +725,10 @@ Integration tests must cover:
 - Full lesson generation flow from prompt builder to validator
 - Retry behavior after invalid AI output
 - Persistence of lesson and quiz results
+- Persistence and later clearing of pending incorrect-answer questions
 - Progress updates after completed quizzes
 - Multi-set topic progression where the learner does not advance until the minimum set count and average-score requirements are both satisfied
+- Stage 11 remediation gating where score-based progression is still blocked until prior incorrect answers are answered correctly
 - Placement into the correct CEFR band up to B2
 - Generation of integrated B1-B2 lessons without off-scope grammar leakage
 - Web GUI rendering of level-introduction pages, lesson explanations, quiz/test screens, wrong-answer explanations, and learner progress summaries

@@ -10,7 +10,7 @@ from uuid import uuid4
 
 from app.ai.service import AIService
 from app.ai.types import LessonGenerationRequest
-from app.models import CEFRBand, Lesson, QuizAttempt, TopicMetadata, UserProgress, WordbankEntry
+from app.models import CEFRBand, Lesson, Question, QuizAttempt, TopicMetadata, UserProgress, WordbankEntry
 from app.storage import LessonRepository, QuizAttemptRepository, UserProgressRepository, WordbankRepository
 
 from .difficulty import DifficultyManager, SessionAction
@@ -95,6 +95,7 @@ class DashboardData:
     recent_attempts: tuple[QuizAttempt, ...]
     roadmap_entries: tuple[RoadmapProgressEntry, ...]
     current_topic_summary: TopicAttemptSummary | None
+    pending_incorrect_count: int
     wordbank_size: int
 
 
@@ -150,6 +151,7 @@ class QuizResult:
     next_topic: TopicMetadata | None
     topic_attempts: int
     topic_passed: bool
+    pending_incorrect_count: int
     feedback: tuple[QuestionFeedback, ...]
     updated_progress: UserProgress
 
@@ -246,14 +248,24 @@ class LearningService:
         active_lesson = self.get_active_lesson(user_id)
         recent_lessons = tuple(self.lesson_repository.list_for_user(user_id, limit=6))
         recent_attempts = tuple(self.quiz_attempt_repository.list_for_user(user_id, limit=6))
-        next_topic = self.content_library.next_topic_for_user(progress)
+        remediation_topic = self._next_remediation_topic(user_id)
+        next_topic = remediation_topic or self.content_library.next_topic_for_user(progress)
 
         current_topic_summary = None
+        pending_incorrect_count = 0
         if next_topic is not None:
             current_topic_summary = self.topic_attempt_summary(user_id, next_topic.topic_id)
+            pending_incorrect_count = len(
+                self.quiz_attempt_repository.list_pending_incorrect_questions(
+                    user_id,
+                    topic_id=next_topic.topic_id,
+                )
+            )
 
         recommended_action = "advance"
-        if current_topic_summary is not None and not current_topic_summary.topic_passed and current_topic_summary.attempts > 0:
+        if pending_incorrect_count > 0 and current_topic_summary is not None and current_topic_summary.topic_passed:
+            recommended_action = "remediation"
+        elif current_topic_summary is not None and not current_topic_summary.topic_passed and current_topic_summary.attempts > 0:
             recommended_action = "hold" if current_topic_summary.page_passed else "review"
         elif progress.recent_scores and progress.recent_scores[-1] < PASSING_SCORE:
             recommended_action = "review"
@@ -267,6 +279,7 @@ class LearningService:
             recent_attempts=recent_attempts,
             roadmap_entries=self._roadmap_entries(progress, next_topic),
             current_topic_summary=current_topic_summary,
+            pending_incorrect_count=pending_incorrect_count,
             wordbank_size=len(self.wordbank_repository.search_for_user(user_id, limit=1000)),
         )
 
@@ -297,9 +310,13 @@ class LearningService:
             )
 
         progress = self.get_or_create_user_progress(user_id)
-        topic = self.content_library.next_topic_for_user(progress)
+        topic = self._next_remediation_topic(user_id) or self.content_library.next_topic_for_user(progress)
         if topic is None:
             topic = self.content_library.all_topics()[-1]
+
+        remediation_session = self._maybe_start_remediation_session(user_id, topic.topic_id)
+        if remediation_session is not None:
+            return remediation_session
 
         if self._needs_intro(user_id, topic.topic_id):
             return LessonSession(
@@ -336,9 +353,13 @@ class LearningService:
             )
 
         progress = self.get_or_create_user_progress(user_id)
-        topic = self.content_library.next_topic_for_user(progress)
+        topic = self._next_remediation_topic(user_id) or self.content_library.next_topic_for_user(progress)
         if topic is None:
             topic = self.content_library.all_topics()[-1]
+
+        remediation_session = self._maybe_start_remediation_session(user_id, topic.topic_id)
+        if remediation_session is not None:
+            return remediation_session
 
         self._record_topic_vocabulary(user_id, topic.topic_id)
         return self.start_topic_lesson(topic.topic_id, user_id=user_id)
@@ -394,6 +415,12 @@ class LearningService:
                 session_goal=session_goal,
                 excluded_question_keys=set(excluded_question_keys),
             )
+            lesson, dedupe_warnings = self._ensure_unique_questions_in_lesson(
+                topic_id=topic_id,
+                lesson=lesson,
+                session_goal=session_goal,
+                excluded_question_keys=set(excluded_question_keys),
+            )
             if session_goal == "practice" and not self._is_practice_lesson(lesson):
                 lesson.lesson_id = f"practice-{topic_id}-{uuid4()}"
 
@@ -407,7 +434,7 @@ class LearningService:
                 resumed=False,
                 source=result.source,
                 lesson=lesson,
-                warnings=(*result.warnings, *cooldown_warnings),
+                warnings=(*result.warnings, *cooldown_warnings, *dedupe_warnings),
             )
 
         except Exception as e:
@@ -563,6 +590,7 @@ class LearningService:
             attempt=attempt,
             topic_id=lesson.topic,
             results=tuple((question, item.is_correct) for question, item in zip(lesson.quiz_questions, feedback, strict=True)),
+            track_outstanding=not practice_mode,
         )
 
         topic_summary = self.topic_attempt_summary(user_id, lesson.topic)
@@ -579,10 +607,21 @@ class LearningService:
         if topic_summary is None:
             raise ValueError("Topic attempt summary was not available after saving an attempt.")
 
+        pending_incorrect_count = 0
+        progression_blocked = False
+        if not practice_mode:
+            pending_incorrect_count = len(
+                self.quiz_attempt_repository.list_pending_incorrect_questions(
+                    user_id,
+                    topic_id=lesson.topic,
+                )
+            )
+            progression_blocked = topic_summary.topic_passed and pending_incorrect_count > 0
+
         if not practice_mode:
             progress.record_quiz_attempt(score_percent)
             progress.current_level = max(progress.current_level, lesson.level)
-            if topic_summary.topic_passed:
+            if topic_summary.topic_passed and not progression_blocked:
                 progress.update_mastery(lesson.topic, topic_summary.average_score / 100.0)
                 progress.current_level = min(len(self.content_library.all_topics()),
                                              max(progress.current_level, lesson.level + 1))
@@ -597,7 +636,10 @@ class LearningService:
             progress.current_cefr_band = self.content_library.target_cefr_band(progress.current_level)
             self._update_skill_scores(progress, lesson, score_percent)
             self.user_progress_repository.save(progress)
-            action = "advance" if topic_summary.topic_passed else ("hold" if topic_summary.page_passed else "review")
+            if progression_blocked:
+                action = "remediation"
+            else:
+                action = "advance" if topic_summary.topic_passed else ("hold" if topic_summary.page_passed else "review")
         else:
             action = "practice"
 
@@ -608,9 +650,10 @@ class LearningService:
             correct_answers=correct_answers,
             total_questions=total_questions,
             action=action,
-            next_topic=self.content_library.next_topic_for_user(progress),
+            next_topic=self._next_remediation_topic(user_id) or self.content_library.next_topic_for_user(progress),
             topic_attempts=topic_summary.attempts,
-            topic_passed=topic_summary.topic_passed,
+            topic_passed=topic_summary.topic_passed and not progression_blocked,
+            pending_incorrect_count=pending_incorrect_count,
             feedback=tuple(feedback),
             updated_progress=progress,
         )
@@ -623,6 +666,52 @@ class LearningService:
             if lesson is not None and lesson.topic == topic_id and not self._is_practice_lesson(lesson):
                 topic_attempts.append(attempt)
         return topic_attempts
+
+    def _next_remediation_topic(self, user_id: str) -> TopicMetadata | None:
+        for topic in self.content_library.all_topics():
+            pending_questions = self.quiz_attempt_repository.list_pending_incorrect_questions(
+                user_id,
+                topic_id=topic.topic_id,
+            )
+            if not pending_questions:
+                continue
+            summary = self.topic_attempt_summary(user_id, topic.topic_id)
+            if summary is None or not summary.topic_passed:
+                continue
+            return topic
+        return None
+
+    def _maybe_start_remediation_session(self, user_id: str, topic_id: str) -> LessonSession | None:
+        topic = self.content_library.get_topic(topic_id)
+        if topic is None:
+            raise ValueError(f"Unknown topic '{topic_id}'.")
+
+        pending_questions = tuple(
+            self.quiz_attempt_repository.list_pending_incorrect_questions(
+                user_id,
+                topic_id=topic_id,
+            )
+        )
+        if not pending_questions:
+            return None
+
+        summary = self.topic_attempt_summary(user_id, topic_id)
+        if summary is None or not summary.topic_passed:
+            return None
+
+        lesson = self._build_remediation_lesson(user_id, topic, pending_questions)
+        self.lesson_repository.save(user_id, lesson)
+        return LessonSession(
+            page_kind="lesson",
+            topic=topic,
+            session_goal="remediation",
+            resumed=False,
+            source="system",
+            lesson=lesson,
+            warnings=(
+                f"{len(pending_questions)} previously incorrect question(s) must be answered correctly before this level can advance.",
+            ),
+        )
 
     def _needs_intro(self, user_id: str, topic_id: str) -> bool:
         return not any(lesson.topic == topic_id for lesson in self.lesson_repository.list_for_user(user_id, limit=50))
@@ -638,6 +727,8 @@ class LearningService:
         summary = self.topic_attempt_summary(user_id, topic_id)
         if summary is None or summary.attempts == 0:
             return "lesson"
+        if summary.topic_passed and self.quiz_attempt_repository.list_pending_incorrect_questions(user_id, topic_id=topic_id):
+            return "remediation"
         return "lesson" if summary.topic_passed else "review"
 
     def _principles_for_topic(self, topic: TopicMetadata) -> tuple[str, ...]:
@@ -816,6 +907,130 @@ class LearningService:
             created_at=lesson.created_at,
         )
         return refreshed_lesson, ("Replaced recently answered-correct questions with different archived questions.",)
+
+    def _build_remediation_lesson(
+        self,
+        user_id: str,
+        topic: TopicMetadata,
+        pending_questions: tuple[Question, ...],
+    ) -> Lesson:
+        progress = self.get_or_create_user_progress(user_id)
+        base_lesson = self.content_library.build_fallback_lesson(
+            topic.topic_id,
+            difficulty=progress.current_difficulty,
+            question_count=max(len(pending_questions), 1),
+            session_goal="review",
+        )
+        remediation_questions = [
+            Question(
+                question_id=f"remediation-{topic.topic_id}-q{index}",
+                prompt=question.prompt,
+                question_type=question.question_type,
+                difficulty_rating=question.difficulty_rating,
+                cefr_band=question.cefr_band,
+                correct_answer=question.correct_answer,
+                explanation=question.explanation,
+                tags=list(question.tags),
+                options=list(question.options),
+                hint=question.hint,
+                rubric=dict(question.rubric),
+            )
+            for index, question in enumerate(pending_questions, start=1)
+        ]
+        return Lesson(
+            lesson_id=f"remediation-{topic.topic_id}-{uuid4()}",
+            topic=topic.topic_id,
+            level=topic.level,
+            cefr_band=topic.cefr_band,
+            difficulty=progress.current_difficulty,
+            explanation_text=(
+                "You must clear previously missed questions before this level can advance. "
+                + base_lesson.explanation_text
+            ),
+            example_sentences=list(base_lesson.example_sentences),
+            key_rules=[
+                "Every question in this set was answered incorrectly in an earlier non-practice attempt.",
+                "The level only advances after each pending question has later been answered correctly.",
+                *base_lesson.key_rules,
+            ],
+            quiz_questions=remediation_questions,
+        )
+
+    def _ensure_unique_questions_in_lesson(
+        self,
+        *,
+        topic_id: str,
+        lesson: Lesson,
+        session_goal: str,
+        excluded_question_keys: set[tuple[str, str, str, str]],
+    ) -> tuple[Lesson, tuple[str, ...]]:
+        target_count = len(lesson.quiz_questions)
+        unique_questions: list[Question] = []
+        used_keys: set[tuple[str, str, str, str]] = set()
+        duplicate_count = 0
+
+        for question in lesson.quiz_questions:
+            key = self._question_cooldown_key(topic_id, question)
+            if key in used_keys:
+                duplicate_count += 1
+                continue
+            used_keys.add(key)
+            unique_questions.append(question)
+
+        if duplicate_count == 0:
+            return lesson, ()
+
+        replacement_lesson = self.content_library.build_fallback_lesson(
+            topic_id,
+            difficulty=lesson.difficulty,
+            question_count=max(target_count * 3, duplicate_count),
+            session_goal=session_goal,
+            excluded_question_keys=tuple(excluded_question_keys | used_keys),
+        )
+
+        for candidate in replacement_lesson.quiz_questions:
+            key = self._question_cooldown_key(topic_id, candidate)
+            if key in used_keys:
+                continue
+            used_keys.add(key)
+            unique_questions.append(candidate)
+            if len(unique_questions) >= target_count:
+                break
+
+        refreshed_questions = [
+            Question(
+                question_id=f"{lesson.lesson_id}-q{index}",
+                prompt=question.prompt,
+                question_type=question.question_type,
+                difficulty_rating=question.difficulty_rating,
+                cefr_band=question.cefr_band,
+                correct_answer=question.correct_answer,
+                explanation=question.explanation,
+                tags=list(question.tags),
+                options=list(question.options),
+                hint=question.hint,
+                rubric=dict(question.rubric),
+            )
+            for index, question in enumerate(unique_questions[:target_count], start=1)
+        ]
+        refreshed_lesson = Lesson(
+            lesson_id=lesson.lesson_id,
+            topic=lesson.topic,
+            level=lesson.level,
+            cefr_band=lesson.cefr_band,
+            difficulty=lesson.difficulty,
+            explanation_text=lesson.explanation_text,
+            example_sentences=list(lesson.example_sentences),
+            key_rules=list(lesson.key_rules),
+            quiz_questions=refreshed_questions,
+            created_at=lesson.created_at,
+        )
+
+        if len(refreshed_questions) < target_count:
+            return refreshed_lesson, (
+                "Removed duplicate questions from the lesson, but too few unique replacements were available to restore the full set.",
+            )
+        return refreshed_lesson, ("Removed duplicate questions from the lesson and replaced them with unique alternatives.",)
 
     def _question_cooldown_key(self, topic_id: str, question: Question) -> tuple[str, str, str, str]:
         return (

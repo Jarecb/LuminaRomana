@@ -132,3 +132,52 @@ def test_wordbank_entries_are_stored_and_searchable(tmp_path):
 
     assert [entry.word for entry in all_entries] == ["baiatul", "cadoul"]
     assert [entry.word for entry in filtered_entries] == ["cadoul"]
+
+
+def test_pending_incorrect_questions_persist_until_answered_correctly(tmp_path):
+    storage = build_storage(tmp_path)
+    user_repository = SQLiteUserProgressRepository(storage)
+    lesson_repository = SQLiteLessonRepository(storage)
+    attempt_repository = SQLiteQuizAttemptRepository(storage)
+
+    user_repository.save(UserProgress(user_id="learner-1"))
+    lesson = build_sample_lesson()
+    lesson_repository.save("learner-1", lesson)
+
+    first_attempt = QuizAttempt(
+        attempt_id="attempt-incorrect",
+        user_id="learner-1",
+        lesson_id=lesson.lesson_id,
+        score_percent=0.0,
+        mistake_tags=["definite_articles"],
+    )
+    attempt_repository.save(first_attempt)
+    attempt_repository.save_question_results(
+        attempt=first_attempt,
+        topic_id=lesson.topic,
+        results=((lesson.quiz_questions[0], False),),
+    )
+
+    pending_after_incorrect = attempt_repository.list_pending_incorrect_questions(
+        "learner-1",
+        topic_id=lesson.topic,
+    )
+
+    assert len(pending_after_incorrect) == 1
+    assert pending_after_incorrect[0].prompt == lesson.quiz_questions[0].prompt
+
+    second_attempt = QuizAttempt(
+        attempt_id="attempt-correct",
+        user_id="learner-1",
+        lesson_id=lesson.lesson_id,
+        score_percent=100.0,
+        mistake_tags=[],
+    )
+    attempt_repository.save(second_attempt)
+    attempt_repository.save_question_results(
+        attempt=second_attempt,
+        topic_id=lesson.topic,
+        results=((lesson.quiz_questions[0], True),),
+    )
+
+    assert attempt_repository.list_pending_incorrect_questions("learner-1", topic_id=lesson.topic) == []

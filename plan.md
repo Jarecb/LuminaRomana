@@ -437,7 +437,7 @@ Notes:
   source checkout, editable install, built wheel install, and optional Docker container for the web UI
 
 ## Stage 11: Incorrect Answer Mastery Gate
-Status: planned.
+Status: completed on 2026-04-05.
 
 Objective: prevent learners from progressing past unresolved mistakes by forcing explicit recovery of previously incorrect answers.
 
@@ -447,16 +447,50 @@ Deliverables:
 - Before progressing to the next lesson level, present a question set that contains all currently outstanding incorrect answers
 - Block progression to the next lesson level until every previously incorrect answer has later been answered correctly
 - Remove an item from the outstanding incorrect-answer set only after it has been answered correctly
+- Ensure that the same question does not appear more than once in any lesson
 
 Exit criteria:
 - Incorrectly answered questions are recorded and remain pending across later sessions
 - When a learner would otherwise advance to the next lesson level, the app instead serves a remediation set containing all outstanding incorrect answers
 - Progression to the next lesson level occurs only after all pending incorrect answers have been answered correctly
 - Once a previously incorrect answer is answered correctly, it no longer blocks progression
+- No lesson contains the same question more than once
+
+Implementation notes:
+- Extended `SQLiteQuizAttemptRepository` so question-result persistence now also maintains a durable `pending_incorrect_questions` set keyed per learner and question identity
+- Updated `LearningService` so normal non-practice quiz submissions:
+  record pending incorrect answers, clear them only after a later correct answer, and block level advancement when score-based topic completion is met but pending mistakes remain
+- Added remediation-session generation that serves a lesson containing the exact outstanding incorrect questions for the blocked topic before the learner can advance
+- Added lesson-level deduplication and fallback replacement so saved lessons never contain the same question more than once, even if AI or fallback content repeats an item
+- Surfaced the mastery-gate state in the web UI through remediation messaging on dashboard, progress, and results pages
+- Added Stage 11 coverage in:
+  `tests/test_learning.py`
+  `tests/test_storage_sqlite.py`
+  `tests/test_web.py`
 
 Notes:
 - This stage adds a mastery gate on top of normal level progression
 - The requirement applies even if the learner has otherwise met the score and attempt thresholds for advancement
+- User-initiated practice replays still avoid changing stored roadmap progress and do not create new progression blockers
+
+## Stage 12: Offline-Only Server Startup Mode
+Status: planned.
+
+Objective: allow the web server to start in a guaranteed offline mode where lesson and question generation never calls an AI provider.
+
+Deliverables:
+- Add a server-start switch `-o` and `--offline`
+- Ensure offline startup forces the application into offline-only generation mode for that server process
+- Bypass all AI question-generation calls while offline mode is enabled
+- Serve only fallback, cached, or otherwise non-AI-generated questions when running in offline mode
+- Surface the active offline-only mode clearly in startup output and learner-facing UI where appropriate
+- Document the offline startup option in the run instructions
+
+Exit criteria:
+- Starting the server with `-o` or `--offline` launches successfully without requiring AI configuration
+- While the server is running in offline mode, no AI provider calls are attempted for lesson or question generation
+- Learners can continue using the server with non-AI question sources only
+- Startup instructions clearly describe how to run the server in offline mode and what behavior changes it implies
 
 ## Recommended Build Order
 1. Stage 0
@@ -471,6 +505,7 @@ Notes:
 10. Stage 9
 11. Stage 10
 12. Stage 11
+13. Stage 12
 
 Validation is placed before heavy AI reliance on purpose. Without that sequencing, the project will generate content faster than it can trust it.
 
@@ -481,9 +516,11 @@ Validation is placed before heavy AI reliance on purpose. Without that sequencin
 - Milestone 4: B2 completion
 - Milestone 5: packaging and deployment readiness
 - Milestone 6: incorrect-answer mastery gating
+- Milestone 7: offline-only server startup mode
 
 ## Immediate Next Steps
-1. Add a real learner-facing placement-test flow in the web UI so the existing placement engine is usable without developer tooling.
-2. Add administrative inspection commands for reviewing archived offline AI questions and lesson-generation failures in more detail.
-3. Add optional export or backup tooling for the SQLite learner database and wordbank.
-4. Evaluate whether open-response writing should remain reference-answer based or gain a validated scoring workflow.
+1. Add a server startup switch `-o` or `--offline` so the web app can run without AI-backed question generation.
+2. Add a real learner-facing placement-test flow in the web UI so the existing placement engine is usable without developer tooling.
+3. Add administrative inspection commands for reviewing archived offline AI questions and lesson-generation failures in more detail.
+4. Add optional export or backup tooling for the SQLite learner database and wordbank.
+5. Evaluate whether open-response writing should remain reference-answer based or gain a validated scoring workflow.

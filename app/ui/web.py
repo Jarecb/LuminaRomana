@@ -138,6 +138,12 @@ class WebApp:
                 f"<p>Current level average: <strong>{dashboard.current_topic_summary.average_score:.0f}%</strong> "
                 f"across {dashboard.current_topic_summary.attempts} question set(s).</p>"
             )
+        pending_note = ""
+        if dashboard.pending_incorrect_count > 0:
+            pending_note = (
+                f"<p class='callout'><strong>{dashboard.pending_incorrect_count}</strong> previously incorrect question(s) "
+                f"still need a later correct answer before this level can advance.</p>"
+            )
         wordbank_link = f"<a class='secondary' href='/wordbank'>Wordbank ({dashboard.wordbank_size})</a>"
         lessons_html = "".join(
             f"<li><a href='/lessons/{escape(lesson.lesson_id)}'>{escape(lesson.topic)}</a> "
@@ -164,6 +170,7 @@ class WebApp:
                 Next recommended action: <strong>{escape(dashboard.recommended_action)}</strong>.
                 Next roadmap topic: <strong>{escape(next_topic)}</strong>.</p>
                 {topic_summary}
+                {pending_note}
                 <form method="post" action="/sessions/start">
                   <button type="submit">Start or resume session</button>
                   <a class="secondary" href="/progress">View progress</a>
@@ -363,6 +370,16 @@ class WebApp:
         mode_note = ""
         if result.action == "practice":
             mode_note = "<p>This was a practice replay. Your stored mastery and current roadmap position were not changed.</p>"
+        elif result.pending_incorrect_count > 0:
+            mode_note = (
+                f"<p><strong>{result.pending_incorrect_count}</strong> previously incorrect question(s) remain unresolved. "
+                "The app will serve those questions again before this level can advance.</p>"
+            )
+        primary_button_label = "Try another question set"
+        if result.action == "advance":
+            primary_button_label = "Continue to next level"
+        elif result.action == "remediation":
+            primary_button_label = "Retry missed questions"
         return self._page(
             "Quiz results",
             f"""
@@ -378,7 +395,7 @@ class WebApp:
                 <p>You only move on after five completed question sets for this level, with at least 80% on the current set and an 80% or higher average across all sets.</p>
                 <div class="actions">
                   <form method="post" action="/sessions/start">
-                    <button type="submit">{'Continue to next level' if result.topic_passed else 'Try another question set'}</button>
+                    <button type="submit">{primary_button_label}</button>
                   </form>
                   <a class="secondary" href="/progress">View progress</a>
                   <a class="secondary" href="/wordbank">Wordbank</a>
@@ -475,6 +492,11 @@ class WebApp:
                 f"<p>Current topic average: {dashboard.current_topic_summary.average_score:.0f}% "
                 f"over {dashboard.current_topic_summary.attempts} set(s).</p>"
             )
+        pending_summary = ""
+        if dashboard.pending_incorrect_count > 0:
+            pending_summary = (
+                f"<p><strong>{dashboard.pending_incorrect_count}</strong> previously incorrect question(s) are still blocking advancement.</p>"
+            )
         skill_markup = "".join(
             f"<li><strong>{escape(skill_name.replace('_', ' ').title())}</strong><span>{score:.0f}% support signal</span></li>"
             for skill_name, score in sorted(skill_scores.items())
@@ -501,6 +523,7 @@ class WebApp:
             total XP {dashboard.user_progress.total_xp}.</p>
             <p>Recent scores: {escape(recent_scores)}.</p>
             {topic_summary}
+            {pending_summary}
             <a class="secondary" href="/">Back to dashboard</a>
             <a class="secondary" href="/wordbank">Wordbank</a>
           </div>

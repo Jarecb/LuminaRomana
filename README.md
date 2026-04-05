@@ -8,11 +8,12 @@ Lumina Romana is a local-first Romanian grammar trainer with:
 - deterministic fallback lessons
 - SQLite-backed learner progress, lesson history, wordbank, and archived offline question storage
 
-The application currently supports the full staged implementation through Stage 10 in `plan.md`: A1 through B2 roadmap coverage, Gemini and OpenAI-compatible providers including Copilot-style endpoints, browser delivery, quality hardening, and repeatable packaging or deployment workflows.
+The application currently supports the full staged implementation through Stage 11 in `plan.md`: A1 through B2 roadmap coverage, Gemini and OpenAI-compatible providers including Copilot-style endpoints, browser delivery, incorrect-answer mastery gating, quality hardening, and repeatable packaging or deployment workflows.
 
 ## What the App Does
 - Serves Romanian grammar lessons and question sets in a local web UI
 - Tracks progress, mastery, recent scores, CEFR estimate, and skill signals
+- Persists incorrectly answered questions and forces mastery-gate remediation before level advancement
 - Uses AI for lesson generation when configured
 - Falls back to deterministic local content when AI is unavailable or invalid
 - Stores validated AI-generated questions into the offline question bank so local fallback content expands over time
@@ -27,7 +28,9 @@ Current behavior:
 
 - if an unfinished lesson exists, it resumes it
 - otherwise it generates the next lesson immediately through the AI-plus-validation pipeline
+- if the learner has met the normal score thresholds for a level but still has unresolved incorrect answers from non-practice attempts, it serves a remediation set containing those exact pending questions before allowing advancement
 - if AI is disabled, unavailable, or rejected by validation, it falls back to local question sets
+- no lesson is allowed to contain the same question more than once
 
 Supporting pages:
 
@@ -205,6 +208,7 @@ The database currently stores:
 - skill scores
 - lesson history
 - quiz attempts
+- pending incorrect-answer questions used by the Stage 11 mastery gate
 - wordbank entries
 - archived offline question bank entries
 
@@ -268,6 +272,7 @@ Implemented:
 - Stage 8 B2 reading and guided writing tasks
 - Stage 9 metrics, sampling, and prompt-regression hardening
 - Stage 10 packaging, deployment assets, and deployment documentation
+- Stage 11 incorrect-answer persistence, remediation gating, and lesson-level question deduplication
 
 Not implemented:
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 
 from app.ai import AIService, PromptBuilder
+from app.ai.types import LessonGenerationResult
 from app.ai.providers import DisabledAIProvider
 from app.models import CEFRBand, Lesson, Question, QuestionType, UserProgress
 from app.services import ContentLibrary, DifficultyManager
@@ -123,6 +124,15 @@ def test_submit_quiz_requires_five_sets_plus_page_and_average_to_advance_topic(t
 
     first_result = results[0]
     final_result = results[-1]
+    remediation_session = service.start_or_resume_lesson_session()
+    assert remediation_session.lesson is not None
+    remediation_result = service.submit_quiz(
+        remediation_session.lesson.lesson_id,
+        {
+            question.question_id: question.correct_answer
+            for question in remediation_session.lesson.quiz_questions
+        },
+    )
     dashboard = service.build_dashboard()
 
     assert first_result.score_percent == 60.0
@@ -131,10 +141,12 @@ def test_submit_quiz_requires_five_sets_plus_page_and_average_to_advance_topic(t
     assert final_result.score_percent == 80.0
     assert final_result.average_score_percent == 80.0
     assert final_result.topic_attempts == 5
-    assert final_result.action == "advance"
-    assert final_result.updated_progress.current_level == 2
-    assert final_result.updated_progress.current_difficulty == 3
-    assert final_result.updated_progress.current_cefr_band == CEFRBand.A1
+    assert final_result.action == "remediation"
+    assert final_result.updated_progress.current_level == 1
+    assert remediation_result.action == "advance"
+    assert remediation_result.updated_progress.current_level == 2
+    assert remediation_result.updated_progress.current_difficulty == 4
+    assert remediation_result.updated_progress.current_cefr_band == CEFRBand.A1
     assert dashboard.next_topic is not None
     assert dashboard.next_topic.topic_id == "nouns_and_articles"
 
@@ -157,6 +169,129 @@ def test_low_score_triggers_review_session(tmp_path):
     assert review_session.session_goal == "review"
     assert review_session.level_revision is not None
     assert review_session.topic.topic_id == "romanian_basics"
+
+
+def test_advancement_is_blocked_until_pending_incorrect_answers_are_cleared(tmp_path):
+    service = build_learning_service(tmp_path)
+    intro = service.start_or_resume_session()
+    session = service.start_topic_lesson(intro.topic.topic_id)
+    assert session.lesson is not None
+
+    current_session = session
+    results = []
+    first_question = None
+    for attempt_index in range(5):
+        assert current_session.lesson is not None
+        answers = {
+            question.question_id: question.correct_answer
+            for question in current_session.lesson.quiz_questions
+        }
+        if attempt_index == 4:
+            first_question = current_session.lesson.quiz_questions[0]
+            answers[first_question.question_id] = ""
+        results.append(service.submit_quiz(current_session.lesson.lesson_id, answers))
+        if attempt_index < 4:
+            current_session = service.start_or_resume_session()
+            assert current_session.page_kind == "revision"
+            current_session = service.start_topic_lesson(current_session.topic.topic_id)
+            assert current_session.lesson is not None
+
+    blocked_result = results[-1]
+    remediation_session = service.start_or_resume_lesson_session()
+
+    assert first_question is not None
+    assert blocked_result.action == "remediation"
+    assert blocked_result.topic_passed is False
+    assert blocked_result.pending_incorrect_count == 1
+    assert blocked_result.updated_progress.current_level == 1
+    assert blocked_result.next_topic is not None
+    assert blocked_result.next_topic.topic_id == "romanian_basics"
+    assert remediation_session.lesson is not None
+    assert remediation_session.session_goal == "remediation"
+    assert remediation_session.lesson.lesson_id.startswith("remediation-romanian_basics-")
+    assert len(remediation_session.lesson.quiz_questions) == 1
+    assert remediation_session.lesson.quiz_questions[0].prompt == first_question.prompt
+
+    remediation_result = service.submit_quiz(
+        remediation_session.lesson.lesson_id,
+        {
+            remediation_session.lesson.quiz_questions[0].question_id:
+                remediation_session.lesson.quiz_questions[0].correct_answer
+        },
+    )
+    dashboard = service.build_dashboard()
+
+    assert remediation_result.action == "advance"
+    assert remediation_result.pending_incorrect_count == 0
+    assert remediation_result.topic_passed is True
+    assert remediation_result.updated_progress.current_level == 2
+    assert dashboard.next_topic is not None
+    assert dashboard.next_topic.topic_id == "nouns_and_articles"
+
+
+def test_start_topic_lesson_replaces_duplicate_questions_with_unique_alternatives(tmp_path):
+    service = build_learning_service(tmp_path)
+    topic = service.content_library.get_topic("romanian_basics")
+    assert topic is not None
+
+    duplicate_question = Question(
+        question_id="duplicate-q1",
+        prompt="Choose the correct Romanian form of 'I am'.",
+        question_type=QuestionType.MULTIPLE_CHOICE,
+        difficulty_rating=2,
+        cefr_band=CEFRBand.A1,
+        correct_answer="sunt",
+        explanation="'Eu sunt' means 'I am'.",
+        tags=["romanian_basics", "a_fi_present"],
+        options=["este", "sunt", "suntem", "esti"],
+        hint="Match the form used with 'eu'.",
+    )
+    duplicate_lesson = Lesson(
+        lesson_id="duplicate-lesson",
+        topic=topic.topic_id,
+        level=topic.level,
+        cefr_band=topic.cefr_band,
+        difficulty=2,
+        explanation_text="Duplicate test lesson.",
+        example_sentences=[],
+        key_rules=["Use the correct form of a fi."],
+        quiz_questions=[
+            duplicate_question,
+            Question(
+                question_id="duplicate-q2",
+                prompt=duplicate_question.prompt,
+                question_type=duplicate_question.question_type,
+                difficulty_rating=duplicate_question.difficulty_rating,
+                cefr_band=duplicate_question.cefr_band,
+                correct_answer=duplicate_question.correct_answer,
+                explanation=duplicate_question.explanation,
+                tags=list(duplicate_question.tags),
+                options=list(duplicate_question.options),
+                hint=duplicate_question.hint,
+            ),
+            build_offline_question(topic.topic_id, 1),
+            build_offline_question(topic.topic_id, 2),
+            build_offline_question(topic.topic_id, 3),
+        ],
+    )
+
+    service.ai_service.generate_lesson = lambda request: LessonGenerationResult(
+        lesson=duplicate_lesson,
+        lesson_payload={},
+        provider_name="test",
+        model="duplicate-fixture",
+        prompt=None,
+        attempts=1,
+        source="ai",
+    )
+
+    session = service.start_topic_lesson(topic.topic_id)
+
+    assert session.lesson is not None
+    prompts = [question.prompt for question in session.lesson.quiz_questions]
+    assert len(prompts) == len(set(prompts))
+    assert len(session.lesson.quiz_questions) == 5
+    assert any("duplicate questions" in warning.lower() for warning in session.warnings)
 
 
 def test_dashboard_creates_default_user_progress(tmp_path):

@@ -5,6 +5,7 @@ from urllib.parse import urlencode
 from wsgiref.util import setup_testing_defaults
 
 from app.bootstrap import create_application
+from app.models import CEFRBand, Question, QuestionType
 from app.ui import create_web_app
 
 
@@ -36,6 +37,21 @@ def request(app, method: str, path: str, data: dict[str, str] | None = None):
     chunks = app(environ, start_response)
     body_bytes = b"".join(chunks)
     return captured["status"], dict(captured["headers"]), body_bytes.decode("utf-8")
+
+
+def build_offline_question(topic_id: str, index: int) -> Question:
+    return Question(
+        question_id=f"offline-{topic_id}-{index}",
+        prompt=f"Unique prompt {index}: choose the correct form for {topic_id}.",
+        question_type=QuestionType.MULTIPLE_CHOICE,
+        difficulty_rating=2,
+        cefr_band=CEFRBand.A1,
+        correct_answer=f"answer-{index}",
+        explanation=f"Explanation for question {index}.",
+        tags=[topic_id],
+        options=[f"answer-{index}", f"distractor-{index}-a", f"distractor-{index}-b"],
+        hint="Pick the exact matching answer.",
+    )
 
 
 def test_dashboard_and_progress_pages_render(monkeypatch, tmp_path):
@@ -112,6 +128,38 @@ def test_wrong_answer_result_page_shows_why_it_is_wrong(monkeypatch, tmp_path):
     assert result_status == "200 OK"
     assert "Why this was wrong" in result_html
     assert "&#10007;" in result_html
+
+
+def test_result_page_shows_mastery_gate_message_for_pending_incorrect_answers(monkeypatch, tmp_path):
+    monkeypatch.setenv("LUMINA_ROMANA_ENV", "test")
+    monkeypatch.setenv("LUMINA_ROMANA_DATA_DIR", str(tmp_path / "data"))
+    web_app = create_web_app(create_application())
+    web_app.application.persistence.offline_questions.upsert_questions(
+        "romanian_basics",
+        [build_offline_question("romanian_basics", index) for index in range(1, 31)],
+    )
+
+    last_lesson_path = ""
+    last_lesson = None
+    for attempt_index in range(5):
+        _, start_headers, _ = request(web_app, "POST", "/sessions/start", {})
+        last_lesson_path = start_headers["Location"]
+        lesson_id = last_lesson_path.removeprefix("/lessons/")
+        last_lesson = web_app.learning_service.lesson_repository.get(lesson_id)
+        assert last_lesson is not None
+
+        submit_data = {
+            f"answer_{question.question_id}": question.correct_answer
+            for question in last_lesson.quiz_questions
+        }
+        if attempt_index == 4:
+            submit_data[f"answer_{last_lesson.quiz_questions[0].question_id}"] = ""
+        result_status, _, result_html = request(web_app, "POST", f"{last_lesson_path}/submit", submit_data)
+
+    assert last_lesson is not None
+    assert result_status == "200 OK"
+    assert "previously incorrect question" in result_html
+    assert "Retry missed questions" in result_html
 
 
 def test_wordbank_search_finds_encountered_words(monkeypatch, tmp_path):
