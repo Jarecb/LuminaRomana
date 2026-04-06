@@ -265,3 +265,31 @@ def test_progress_page_can_revisit_completed_level_without_losing_position(monke
     assert "stored mastery and current roadmap position were not changed" in result_html
     assert updated.current_level == 5
     assert updated.current_cefr_band.value == "A2"
+
+
+def test_offline_only_server_mode_uses_fallback_and_renders_banner(monkeypatch, tmp_path):
+    monkeypatch.setenv("LUMINA_ROMANA_ENV", "test")
+    monkeypatch.setenv("LUMINA_ROMANA_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("LUMINA_ROMANA_AI_ENABLED", "true")
+    monkeypatch.setenv("LUMINA_ROMANA_AI_PROVIDER", "openai")
+    monkeypatch.setenv("LUMINA_ROMANA_AI_MODEL", "gpt-4.1-mini")
+    monkeypatch.setenv("LUMINA_ROMANA_AI_API_KEY", "test-key")
+
+    def fail_if_called(self, messages, temperature):
+        raise AssertionError("AI provider should not be called in offline-only mode.")
+
+    monkeypatch.setattr("app.ai.providers.AIChatProvider.generate_json", fail_if_called)
+
+    web_app = create_web_app(create_application(offline_only=True))
+
+    status, _, dashboard_html = request(web_app, "GET", "/")
+    start_status, start_headers, _ = request(web_app, "POST", "/sessions/start", {})
+    lesson_path = start_headers["Location"]
+    lesson_id = lesson_path.removeprefix("/lessons/")
+    lesson = web_app.learning_service.lesson_repository.get(lesson_id)
+
+    assert status == "200 OK"
+    assert "Offline-only mode active." in dashboard_html
+    assert start_status == "302 Found"
+    assert lesson is not None
+    assert lesson.lesson_id.startswith("fallback-")

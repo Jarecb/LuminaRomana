@@ -8,7 +8,7 @@ Lumina Romana is a local-first Romanian grammar trainer with:
 - deterministic fallback lessons
 - SQLite-backed learner progress, lesson history, wordbank, and archived offline question storage
 
-The application currently supports the full staged implementation through Stage 11 in `plan.md`: A1 through B2 roadmap coverage, Gemini and OpenAI-compatible providers including Copilot-style endpoints, browser delivery, incorrect-answer mastery gating, quality hardening, and repeatable packaging or deployment workflows.
+The application currently supports the full staged implementation through Stage 12 in `plan.md`: A1 through B2 roadmap coverage, Gemini and OpenAI-compatible providers including Copilot-style endpoints, browser delivery, incorrect-answer mastery gating, offline-only server startup, quality hardening, and repeatable packaging or deployment workflows.
 
 ## What the App Does
 - Serves Romanian grammar lessons and question sets in a local web UI
@@ -16,6 +16,7 @@ The application currently supports the full staged implementation through Stage 
 - Persists incorrectly answered questions and forces mastery-gate remediation before level advancement
 - Uses AI for lesson generation when configured
 - Falls back to deterministic local content when AI is unavailable or invalid
+- Can force the browser server into offline-only mode so it never attempts AI generation during that process
 - Stores validated AI-generated questions into the offline question bank so local fallback content expands over time
 - Supports CLI maintenance of the offline question bank, including clearing it and seeding it across the full A1-B2 roadmap
 - Supports wordbank browsing and practice replays
@@ -30,6 +31,7 @@ Current behavior:
 - otherwise it generates the next lesson immediately through the AI-plus-validation pipeline
 - if the learner has met the normal score thresholds for a level but still has unresolved incorrect answers from non-practice attempts, it serves a remediation set containing those exact pending questions before allowing advancement
 - if AI is disabled, unavailable, or rejected by validation, it falls back to local question sets
+- if the server was started with `-o`, `-offline`, or `--offline`, it skips AI entirely and serves only fallback or archived offline questions
 - no lesson is allowed to contain the same question more than once
 
 Supporting pages:
@@ -87,6 +89,16 @@ Direct startup also works:
 python main.py serve
 ```
 
+Offline-only startup for the browser server:
+
+```powershell
+.\run_server.bat --offline
+python main.py serve --offline
+python main.py -o
+```
+
+In offline-only mode, the server does not require AI credentials for that process and will only use deterministic fallback lessons plus archived offline-bank questions.
+
 Default address:
 
 ```text
@@ -107,7 +119,7 @@ The CLI is mainly for diagnostics, testing, and offline-content maintenance. Use
 Command reference:
 
 - `status`: prints the current environment, database path, topic count, offline-question-bank size, and active AI provider status.
-- `serve`: starts the browser UI on the configured host and port.
+- `serve [-o|-offline|--offline]`: starts the browser UI on the configured host and port. When an offline flag is present, the server runs in offline-only mode and never calls an AI provider.
 - `reset-progress`: resets the default learner profile back to Level 1, A1, difficulty 1, and clears its stored progress history.
 - `set-progress --band <A1|A2|B1|B2>`: jumps the default learner to the first roadmap level for that CEFR band.
 - `set-progress --level <N> [--difficulty <N>]`: jumps the default learner to an exact roadmap level, optionally forcing a testing difficulty.
@@ -154,6 +166,7 @@ Primary variables:
 - `LUMINA_ROMANA_AI_BASE_URL`
 - `LUMINA_ROMANA_AI_TIMEOUT_SECONDS`
 - `LUMINA_ROMANA_AI_MAX_RETRIES`
+- `LUMINA_ROMANA_AI_OFFLINE_ONLY`
 
 Supported provider values:
 
@@ -197,6 +210,14 @@ or
 ```text
 AI provider: copilot (..., configured=True)
 ```
+
+Offline-only verification:
+
+```powershell
+python main.py serve --offline
+```
+
+Expected startup output includes `offline-only mode`, and the web UI shows an offline-only banner while the server is running in that mode.
 
 ## Persistence
 Runtime data is stored in SQLite under the configured data directory.
@@ -248,6 +269,15 @@ docker run --rm -p 8000:8000 ^
   lumina-romana
 ```
 
+Offline-only container run:
+
+```powershell
+docker run --rm -p 8000:8000 ^
+  -e LUMINA_ROMANA_AI_OFFLINE_ONLY=true ^
+  -v ${PWD}\data:/app/data ^
+  lumina-romana python main.py serve --offline
+```
+
 See `docs/DEPLOYMENT.md` for the full local, wheel, and container deployment flows.
 
 ## Repository Layout
@@ -273,6 +303,7 @@ Implemented:
 - Stage 9 metrics, sampling, and prompt-regression hardening
 - Stage 10 packaging, deployment assets, and deployment documentation
 - Stage 11 incorrect-answer persistence, remediation gating, and lesson-level question deduplication
+- Stage 12 offline-only server startup mode
 
 Not implemented:
 

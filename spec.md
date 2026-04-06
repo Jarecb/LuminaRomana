@@ -62,6 +62,7 @@ Completed plan stages as of 2026-04-05:
 - Stage 9: Quality hardening
 - Stage 10: Packaging and deployment
 - Stage 11: Incorrect-answer mastery gate
+- Stage 12: Offline-only server startup mode
 
 This means the current baseline already includes:
 
@@ -80,6 +81,7 @@ This means the current baseline already includes:
 - Stage 9 AI-quality metrics, prompt regression coverage, and a content-sampling workflow
 - Stage 10 packaging and deployment assets including build metadata, a Windows startup script, and optional containerization
 - Stage 11 persistent incorrect-answer tracking, remediation lessons before level advancement, and lesson-level duplicate-question prevention
+- Stage 12 browser-server startup flags that can force the running process into offline-only fallback mode with visible learner-facing status
 
 Subsequent work defined in this specification must build on that baseline rather than re-specifying it as hypothetical. In particular, Stage 5 validation work should now integrate with the existing AI service and prompt builder instead of inventing a new content-generation entrypoint.
 
@@ -238,6 +240,7 @@ The web GUI must:
 - Show topic mastery or equivalent progress indicators for the current roadmap position
 - Support review of past lesson results and recent quiz performance
 - Be able to present placement-test sections and outcomes
+- Show when the active server process is running in offline-only mode so learners know AI generation is disabled for that session
 
 The web GUI should be usable on a standard desktop browser first. Mobile responsiveness is desirable, but desktop browser support is the minimum requirement.
 
@@ -319,6 +322,8 @@ AI is responsible for generating:
 - Hints and answer explanations
 
 AI is not trusted blindly. Every generated item must pass validation before being shown to users.
+
+The runtime must also support an explicit offline-only server mode where lesson generation skips AI entirely and serves only deterministic fallback or archived offline-bank questions.
 
 ### 8.2 Prompt Inputs
 The prompt construction layer must include:
@@ -409,6 +414,7 @@ Current implementation baseline:
 - Accepted content is normalized into the `Lesson` domain model and only then exposed as learner-safe output
 - Rejected content triggers a retry with validation feedback embedded into the next prompt when retry budget remains
 - If retries are exhausted, curated fallback templates plus archived offline AI questions are used for the supported A1-B2 roadmap topics
+- If the server was started in offline-only mode, the AI provider layer is bypassed completely and only fallback or archived offline questions are served for that process
 - Administrative CLI support can clear the archived offline bank entirely or seed it across the roadmap, targeting ten archived questions per topic by default
 - Prompts that claim to be dialogue or reply tasks without including actual dialogue context are rejected
 
@@ -487,6 +493,8 @@ Suggested Python package layout:
 - Validation layer for schema and quality checks
 - Storage layer for SQLite or file-based persistence
 - UI layer that includes a web-based GUI for learner interaction and may also retain a CLI for development or administration tasks
+
+The current startup contract should also allow the browser server to be launched with an offline-only switch so deployment and local use do not depend on live AI connectivity.
 
 ## 12. Python Technical Requirements
 
@@ -729,6 +737,7 @@ Integration tests must cover:
 - Progress updates after completed quizzes
 - Multi-set topic progression where the learner does not advance until the minimum set count and average-score requirements are both satisfied
 - Stage 11 remediation gating where score-based progression is still blocked until prior incorrect answers are answered correctly
+- Stage 12 offline-only server startup where the browser process serves lessons without attempting any AI provider call
 - Placement into the correct CEFR band up to B2
 - Generation of integrated B1-B2 lessons without off-scope grammar leakage
 - Web GUI rendering of level-introduction pages, lesson explanations, quiz/test screens, wrong-answer explanations, and learner progress summaries
@@ -755,6 +764,7 @@ The following acceptance criteria define a successful initial release:
 6. User progress is persisted locally.
 7. At least the first four roadmap levels are supported.
 8. A web GUI displays level introductions, lesson explanations, quizzes or tests, answer explanations including why wrong answers are wrong, overall progress, and the current language competence band.
+9. The web server can be started in offline-only mode with `-o`, `-offline`, or `--offline`, and in that mode it serves fallback or archived offline questions without requiring AI configuration.
 
 ### 16.5 Acceptance Tests for B2 Completion
 The following criteria define successful upper-intermediate support:

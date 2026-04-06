@@ -171,3 +171,47 @@ def test_seed_offline_questions_defaults_to_100_per_topic(capsys, monkeypatch, t
     assert exit_code == 0
     assert "- romanian_basics:" in captured.out
     assert "requested minimum was 100" in captured.out
+
+
+def test_serve_offline_flag_starts_server_in_offline_only_mode(monkeypatch, tmp_path):
+    monkeypatch.setenv("LUMINA_ROMANA_ENV", "test")
+    monkeypatch.setenv("LUMINA_ROMANA_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("LUMINA_ROMANA_AI_ENABLED", "true")
+    monkeypatch.setenv("LUMINA_ROMANA_AI_PROVIDER", "gemini")
+    monkeypatch.setenv("LUMINA_ROMANA_AI_MODEL", "gemini-2.5-flash")
+    monkeypatch.setenv("LUMINA_ROMANA_AI_API_KEY", "gemini-test-key")
+
+    captured = {}
+
+    def fake_run_dev_server(app):
+        captured["offline_only"] = app.settings.ai.offline_only
+        captured["provider_name"] = app.ai_service.provider.provider_name
+        captured["configured"] = app.ai_service.is_configured
+
+    monkeypatch.setattr("app.cli.run_dev_server", fake_run_dev_server)
+
+    exit_code = main(["serve", "--offline"])
+
+    assert exit_code == 0
+    assert captured == {
+        "offline_only": True,
+        "provider_name": "offline",
+        "configured": False,
+    }
+
+
+def test_top_level_offline_flag_defaults_to_serve(monkeypatch, tmp_path):
+    monkeypatch.setenv("LUMINA_ROMANA_ENV", "test")
+    monkeypatch.setenv("LUMINA_ROMANA_DATA_DIR", str(tmp_path / "data"))
+
+    captured = {}
+
+    def fake_run_dev_server(app):
+        captured["offline_only"] = app.settings.ai.offline_only
+
+    monkeypatch.setattr("app.cli.run_dev_server", fake_run_dev_server)
+
+    exit_code = main(["-o"])
+
+    assert exit_code == 0
+    assert captured["offline_only"] is True

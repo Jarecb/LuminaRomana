@@ -78,3 +78,18 @@ def test_create_application_accepts_copilot_provider_alias(monkeypatch, tmp_path
     assert app.ai_service.is_configured is True
     assert app.ai_service.provider.provider_name == "copilot"
     assert app.ai_service.provider.model == "gpt-4.1"
+
+
+def test_create_application_can_force_offline_only_mode(monkeypatch, tmp_path):
+    monkeypatch.setenv("LUMINA_ROMANA_DATA_DIR", str(tmp_path / "runtime"))
+    monkeypatch.setenv("LUMINA_ROMANA_AI_ENABLED", "true")
+    monkeypatch.setenv("LUMINA_ROMANA_AI_PROVIDER", "gemini")
+    monkeypatch.setenv("LUMINA_ROMANA_AI_MODEL", "gemini-2.5-flash")
+    monkeypatch.setenv("LUMINA_ROMANA_AI_API_KEY", "gemini-test-key")
+
+    app = create_application(offline_only=True)
+
+    assert app.settings.ai.offline_only is True
+    assert app.ai_service.is_configured is False
+    assert app.ai_service.provider.provider_name == "offline"
+    assert app.ai_service.provider.model == "offline-only"

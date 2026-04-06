@@ -1,7 +1,7 @@
 # Lumina Romana Deployment Guide
 
 ## Overview
-Lumina Romana is a local-first Python application with a browser UI, a small CLI, SQLite persistence, and optional AI-backed lesson generation.
+Lumina Romana is a local-first Python application with a browser UI, a small CLI, SQLite persistence, optional AI-backed lesson generation, and an offline-only server mode for fallback-only operation.
 
 The supported Stage 10 deployment paths are:
 
@@ -49,6 +49,16 @@ Or directly:
 python main.py serve
 ```
 
+Offline-only browser startup:
+
+```powershell
+.\run_server.bat --offline
+python main.py serve --offline
+python main.py -o
+```
+
+When started in offline-only mode, the server process never calls an AI provider and does not require AI credentials for that run.
+
 `run_server.bat` can also forward CLI commands while keeping the same AI configuration loaded from the batch file:
 
 ```powershell
@@ -66,6 +76,8 @@ Command reference:
   Shows the current runtime environment, database path, roadmap topic count, offline-question-bank size, and AI provider status.
 - `serve`
   Starts the browser UI.
+- `serve -o`
+  Starts the browser UI in offline-only mode. The aliases `-offline` and `--offline` are also accepted.
 - `reset-progress`
   Resets the default learner profile back to the starting position and clears its saved progress state.
 - `set-progress --band <A1|A2|B1|B2>`
@@ -88,6 +100,7 @@ Examples:
 
 ```powershell
 python main.py status
+python main.py serve --offline
 python main.py set-progress --band B1
 python main.py sample-content --topics romanian_basics b2_core_structures
 python main.py clear-offline-questions
@@ -100,6 +113,7 @@ If installed with `pip install -e .` or from a wheel, you can also run:
 ```powershell
 lumina-romana status
 lumina-romana serve
+lumina-romana serve --offline
 ```
 
 Offline question bank maintenance notes:
@@ -144,6 +158,15 @@ docker run --rm -p 8000:8000 ^
   lumina-romana
 ```
 
+Offline-only example:
+
+```powershell
+docker run --rm -p 8000:8000 ^
+  -e LUMINA_ROMANA_AI_OFFLINE_ONLY=true ^
+  -v ${PWD}\data:/app/data ^
+  lumina-romana python main.py serve --offline
+```
+
 Copilot/OpenAI-compatible example:
 
 ```powershell
@@ -167,6 +190,7 @@ The learner database includes:
 - archived offline AI-generated questions
 
 Use `python main.py status` to confirm the current offline question bank size after seeding or clearing.
+Use `python main.py serve --offline` when you need the web app to stay strictly on fallback and archived offline content.
 
 Back up the configured data directory to preserve all learner state.
 

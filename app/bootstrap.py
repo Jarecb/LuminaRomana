@@ -41,8 +41,8 @@ class Application:
     quality_service: QualityService
 
 
-def create_application() -> Application:
-    settings = Settings.load()
+def create_application(*, offline_only: bool = False) -> Application:
+    settings = Settings.load(offline_only=offline_only)
     configure_logging(settings.log_level)
     settings.data_dir.mkdir(parents=True, exist_ok=True)
     logger = logging.getLogger("lumina_romana")
@@ -105,6 +105,12 @@ def create_application() -> Application:
 
 
 def _build_ai_provider(ai_settings) -> DisabledAIProvider | AIChatProvider | GeminiAIProvider:
+    if ai_settings.offline_only:
+        return DisabledAIProvider(
+            provider_name="offline",
+            model="offline-only",
+        )
+
     normalized_provider = ai_settings.provider.strip().lower()
     if not ai_settings.is_configured:
         return DisabledAIProvider(

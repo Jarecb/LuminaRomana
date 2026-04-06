@@ -474,7 +474,7 @@ Notes:
 - User-initiated practice replays still avoid changing stored roadmap progress and do not create new progression blockers
 
 ## Stage 12: Offline-Only Server Startup Mode
-Status: planned.
+Status: completed on 2026-04-05.
 
 Objective: allow the web server to start in a guaranteed offline mode where lesson and question generation never calls an AI provider.
 
@@ -491,6 +491,21 @@ Exit criteria:
 - While the server is running in offline mode, no AI provider calls are attempted for lesson or question generation
 - Learners can continue using the server with non-AI question sources only
 - Startup instructions clearly describe how to run the server in offline mode and what behavior changes it implies
+
+Implementation notes:
+- Extended the CLI `serve` command to accept `-o`, `-offline`, and `--offline`, and allowed the top-level shortcut `python main.py -o` to default into offline browser startup
+- Added an `offline_only` runtime override in application settings and bootstrap so the server process can force AI generation off even when AI credentials are configured in the environment
+- Wired offline-only startup to build an `offline` disabled provider, which keeps `AIService` on the deterministic fallback and archived-offline-question path without attempting provider calls
+- Surfaced offline-only state in both server startup output and a learner-facing web banner so the running mode is explicit
+- Updated `run_server.bat` so offline server startup bypasses the normal AI API key check while preserving that check for regular AI-backed startup
+- Added Stage 12 coverage in:
+  `tests/test_cli.py`
+  `tests/test_config.py`
+  `tests/test_web.py`
+
+Notes:
+- Offline-only mode applies to the current server process only and does not disable AI-backed maintenance commands unless they are started with the same override
+- In offline-only mode, lesson generation uses deterministic fallback lessons plus any archived offline question-bank entries already stored in SQLite
 
 ## Recommended Build Order
 1. Stage 0
@@ -519,8 +534,7 @@ Validation is placed before heavy AI reliance on purpose. Without that sequencin
 - Milestone 7: offline-only server startup mode
 
 ## Immediate Next Steps
-1. Add a server startup switch `-o` or `--offline` so the web app can run without AI-backed question generation.
-2. Add a real learner-facing placement-test flow in the web UI so the existing placement engine is usable without developer tooling.
-3. Add administrative inspection commands for reviewing archived offline AI questions and lesson-generation failures in more detail.
-4. Add optional export or backup tooling for the SQLite learner database and wordbank.
-5. Evaluate whether open-response writing should remain reference-answer based or gain a validated scoring workflow.
+1. Add a real learner-facing placement-test flow in the web UI so the existing placement engine is usable without developer tooling.
+2. Add administrative inspection commands for reviewing archived offline AI questions and lesson-generation failures in more detail.
+3. Add optional export or backup tooling for the SQLite learner database and wordbank.
+4. Evaluate whether open-response writing should remain reference-answer based or gain a validated scoring workflow.

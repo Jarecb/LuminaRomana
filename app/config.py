@@ -15,6 +15,7 @@ def _env_flag(name: str, default: bool) -> bool:
 @dataclass(slots=True)
 class AISettings:
     enabled: bool = False
+    offline_only: bool = False
     provider: str = "openai"
     model: str = "gpt-4.1-mini"
     api_key: str | None = None
@@ -24,7 +25,7 @@ class AISettings:
 
     @property
     def is_configured(self) -> bool:
-        return self.enabled and bool(self.api_key)
+        return not self.offline_only and self.enabled and bool(self.api_key)
 
     @property
     def configured(self) -> bool:
@@ -48,7 +49,7 @@ class Settings:
     web: WebSettings = field(default_factory=WebSettings)
 
     @classmethod
-    def load(cls) -> "Settings":
+    def load(cls, *, offline_only: bool = False) -> "Settings":
         data_dir = Path(os.getenv("LUMINA_ROMANA_DATA_DIR", "data")).expanduser()
         database_path = Path(
             os.getenv("LUMINA_ROMANA_DB_PATH", str(data_dir / "lumina_romana.db"))
@@ -61,6 +62,7 @@ class Settings:
             database_path=database_path,
             ai=AISettings(
                 enabled=_env_flag("LUMINA_ROMANA_AI_ENABLED", default=bool(api_key)),
+                offline_only=offline_only or _env_flag("LUMINA_ROMANA_AI_OFFLINE_ONLY", default=False),
                 provider=os.getenv("LUMINA_ROMANA_AI_PROVIDER", "openai").lower(),
                 model=os.getenv("LUMINA_ROMANA_AI_MODEL", "gpt-4.1-mini"),
                 api_key=api_key,

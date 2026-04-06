@@ -554,6 +554,16 @@ class WebApp:
             f"</form>"
         )
 
+    def _runtime_mode_banner(self) -> str:
+        if not self.application.settings.ai.offline_only:
+            return ""
+        return (
+            "<section class='mode-banner'>"
+            "<strong>Offline-only mode active.</strong> "
+            "This server uses cached or deterministic local questions only and will not call an AI provider."
+            "</section>"
+        )
+
     def _page(self, title: str, body: str) -> str:
         return f"""<!DOCTYPE html>
 <html lang="en">
@@ -613,6 +623,14 @@ class WebApp:
     .mark {{ display: inline-block; min-width: 1.25rem; font-weight: 700; }}
     .feedback.correct .mark, .feedback.correct .status {{ color: var(--ok); }}
     .feedback.incorrect .mark, .feedback.incorrect .status {{ color: var(--warn); }}
+    .mode-banner {{
+      margin: 0 auto 1rem;
+      padding: .9rem 1rem;
+      border-radius: 16px;
+      border: 1px solid rgba(138,63,42,.24);
+      background: rgba(138,63,42,.08);
+      color: var(--warn);
+    }}
     .actions {{ display: flex; flex-wrap: wrap; gap: .75rem; align-items: center; }}
     .mastery {{ list-style: none; padding-left: 0; }}
     .mastery li {{ padding: .75rem 0; border-bottom: 1px solid var(--line); }}
@@ -627,7 +645,7 @@ class WebApp:
   </style>
 </head>
 <body>
-  <main>{body}</main>
+  <main>{self._runtime_mode_banner()}{body}</main>
 </body>
 </html>"""
 
@@ -645,10 +663,21 @@ def create_web_app(application: Application) -> WebApp:
 def run_dev_server(application: Application) -> None:
     web_app = create_web_app(application)
     with make_server(application.settings.web.host, application.settings.web.port, web_app) as server:
-        application.logger.info(
-            "Starting web server on http://%s:%s",
-            application.settings.web.host,
-            application.settings.web.port,
-        )
-        print(f"Serving Lumina Romana on http://{application.settings.web.host}:{application.settings.web.port}")
+        if application.settings.ai.offline_only:
+            application.logger.info(
+                "Starting web server in offline-only mode on http://%s:%s",
+                application.settings.web.host,
+                application.settings.web.port,
+            )
+            print(
+                "Serving Lumina Romana in offline-only mode on "
+                f"http://{application.settings.web.host}:{application.settings.web.port}"
+            )
+        else:
+            application.logger.info(
+                "Starting web server on http://%s:%s",
+                application.settings.web.host,
+                application.settings.web.port,
+            )
+            print(f"Serving Lumina Romana on http://{application.settings.web.host}:{application.settings.web.port}")
         server.serve_forever()

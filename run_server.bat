@@ -19,13 +19,6 @@ rem set "LUMINA_ROMANA_AI_BASE_URL=https://api.openai.com/v1"
 rem set "LUMINA_ROMANA_AI_TIMEOUT_SECONDS=30"
 rem set "LUMINA_ROMANA_AI_MAX_RETRIES=2"
 
-if /I "%LUMINA_ROMANA_AI_ENABLED%"=="true" if "%LUMINA_ROMANA_AI_API_KEY%"=="" (
-    echo LUMINA_ROMANA_AI_API_KEY is empty in run_server.bat.
-    echo Edit run_server.bat and set your Gemini or Copilot/OpenAI-compatible API key first.
-    pause
-    exit /b 1
-)
-
 set "PYTHON_EXE=python"
 if exist ".venv\Scripts\python.exe" (
     set "PYTHON_EXE=.venv\Scripts\python.exe"
@@ -36,10 +29,31 @@ if "%LUMINA_COMMAND%"=="" (
     set "LUMINA_COMMAND=serve"
 )
 
+set "LUMINA_OFFLINE_ONLY=false"
+for %%A in (%LUMINA_COMMAND%) do (
+    if /I "%%~A"=="-o" set "LUMINA_OFFLINE_ONLY=true"
+    if /I "%%~A"=="-offline" set "LUMINA_OFFLINE_ONLY=true"
+    if /I "%%~A"=="--offline" set "LUMINA_OFFLINE_ONLY=true"
+)
+
+if /I not "%LUMINA_OFFLINE_ONLY%"=="true" if /I "%LUMINA_ROMANA_AI_ENABLED%"=="true" if "%LUMINA_ROMANA_AI_API_KEY%"=="" (
+    echo LUMINA_ROMANA_AI_API_KEY is empty in run_server.bat.
+    echo Edit run_server.bat and set your Gemini or Copilot/OpenAI-compatible API key first.
+    echo Or start with `.\run_server.bat serve --offline` to force offline-only mode.
+    pause
+    exit /b 1
+)
+
+set "LUMINA_MODE_LABEL=ai-enabled-or-fallback"
+if /I "%LUMINA_OFFLINE_ONLY%"=="true" (
+    set "LUMINA_MODE_LABEL=offline-only"
+)
+
 echo Starting Lumina Romana...
 echo Host:     %LUMINA_ROMANA_WEB_HOST%
 echo Port:     %LUMINA_ROMANA_WEB_PORT%
 echo Data dir: %LUMINA_ROMANA_DATA_DIR%
+echo Mode:     %LUMINA_MODE_LABEL%
 echo Provider: %LUMINA_ROMANA_AI_PROVIDER%
 echo Model:    %LUMINA_ROMANA_AI_MODEL%
 echo Command:  %LUMINA_COMMAND%

@@ -17,12 +17,25 @@ CEFR_TO_LEVEL = {
 }
 
 DEFAULT_OFFLINE_QUESTION_TARGET = 100
+OFFLINE_SERVER_SWITCHES = {"-o", "-offline", "--offline"}
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    raw_args = list(argv) if argv is not None else sys.argv[1:]
+    if raw_args and raw_args[0] in OFFLINE_SERVER_SWITCHES:
+        raw_args = ["serve", *raw_args]
+
     parser = argparse.ArgumentParser(prog="lumina-romana")
     subcommands = parser.add_subparsers(dest="command")
-    subcommands.add_parser("serve", help="Run the browser-based learner interface.")
+    serve_parser = subcommands.add_parser("serve", help="Run the browser-based learner interface.")
+    serve_parser.add_argument(
+        "-o",
+        "-offline",
+        "--offline",
+        action="store_true",
+        dest="offline",
+        help="Run the web server in offline-only mode with AI generation disabled for this process.",
+    )
     subcommands.add_parser("status", help="Print configuration and runtime status.")
     subcommands.add_parser("reset-progress", help="Reset the default learner's local progress for testing.")
     subcommands.add_parser(
@@ -83,10 +96,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         choices=("lesson", "review", "practice"),
         help="Session goal to use when generating the seed content.",
     )
-    args = parser.parse_args(list(argv) if argv is not None else sys.argv[1:])
+    args = parser.parse_args(raw_args)
 
-    app = create_application()
     command = args.command or "status"
+    app = create_application(offline_only=bool(getattr(args, "offline", False)) if command == "serve" else False)
     if command == "serve":
         run_dev_server(app)
         return 0
