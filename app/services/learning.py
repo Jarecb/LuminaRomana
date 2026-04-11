@@ -20,6 +20,7 @@ DEFAULT_USER_ID = "default-learner"
 PASSING_SCORE = 80.0
 MIN_ATTEMPTS_TO_ADVANCE = 5
 QUESTION_SET_COOLDOWN = 5
+WORD_TOKEN_PATTERN = re.compile(r"[A-Za-zĂÂÎȘȚăâîșțŞŢşţ]+(?:[-'][A-Za-zĂÂÎȘȚăâîșțŞŢşţ]+)*")
 
 LEVEL_PRINCIPLES: dict[str, tuple[str, ...]] = {
     "romanian_basics": (
@@ -425,6 +426,7 @@ class LearningService:
                 lesson.lesson_id = f"practice-{topic_id}-{uuid4()}"
 
             self.lesson_repository.save(user_id, lesson)
+            self._record_lesson_vocabulary(user_id, lesson)
             print(f"[DEBUG] LearningService: Session successfully created.", flush=True)
 
             return LessonSession(
@@ -757,14 +759,58 @@ class LearningService:
 
     def _record_topic_vocabulary(self, user_id: str, topic_id: str) -> None:
         for word, definition in self.content_library.vocabulary_for_topic(topic_id):
-            self.wordbank_repository.upsert(
-                WordbankEntry(
-                    user_id=user_id,
-                    word=word,
-                    definition=definition,
-                    topic=topic_id,
-                )
+            self._upsert_wordbank_entry(
+                user_id=user_id,
+                word=word,
+                definition=definition,
+                topic_id=topic_id,
             )
+
+    def _record_lesson_vocabulary(self, user_id: str, lesson: Lesson) -> None:
+        for sentence in lesson.example_sentences:
+            context_definition = f"Seen in example: {sentence.english.strip()}"
+            for token in self._extract_wordbank_tokens(sentence.romanian):
+                self._upsert_wordbank_entry(
+                    user_id=user_id,
+                    word=token,
+                    definition=context_definition,
+                    topic_id=lesson.topic,
+                )
+
+    def _upsert_wordbank_entry(
+            self,
+            *,
+            user_id: str,
+            word: str,
+            definition: str,
+            topic_id: str,
+    ) -> None:
+        normalized_word = self._normalize_wordbank_text(word)
+        normalized_definition = definition.strip()
+        if not normalized_word or not normalized_definition:
+            return
+        self.wordbank_repository.upsert(
+            WordbankEntry(
+                user_id=user_id,
+                word=normalized_word,
+                definition=normalized_definition,
+                topic=topic_id,
+            )
+        )
+
+    def _extract_wordbank_tokens(self, text: str) -> tuple[str, ...]:
+        seen: set[str] = set()
+        tokens: list[str] = []
+        for match in WORD_TOKEN_PATTERN.finditer(text):
+            token = self._normalize_wordbank_text(match.group(0))
+            if not token or token in seen:
+                continue
+            seen.add(token)
+            tokens.append(token)
+        return tuple(tokens)
+
+    def _normalize_wordbank_text(self, text: str) -> str:
+        return " ".join(text.strip().split()).casefold()
 
     def _clear_user_state(self, user_id: str) -> None:
         self.quiz_attempt_repository.delete_for_user(user_id)

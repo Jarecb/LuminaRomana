@@ -693,9 +693,7 @@ class SQLiteWordbankRepository:
                 """
                 INSERT INTO wordbank (user_id, word, definition, topic, first_seen_at)
                 VALUES (?, ?, ?, ?, ?)
-                ON CONFLICT(user_id, word) DO UPDATE SET
-                    definition = excluded.definition,
-                    topic = excluded.topic
+                ON CONFLICT(user_id, word) DO NOTHING
                 """,
                 (
                     entry.user_id,

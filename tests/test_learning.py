@@ -97,6 +97,19 @@ def test_start_or_resume_lesson_session_generates_lesson_immediately(tmp_path):
     assert any(entry.topic == "romanian_basics" for entry in wordbank.entries)
 
 
+def test_start_or_resume_lesson_session_adds_example_sentence_words_to_wordbank(tmp_path):
+    service = build_learning_service(tmp_path)
+
+    session = service.start_or_resume_lesson_session()
+    wordbank = service.build_wordbank()
+
+    assert session.lesson is not None
+    assert any(
+        entry.word == "ana" and entry.definition == "Seen in example: Hello, I am Ana."
+        for entry in wordbank.entries
+    )
+
+
 def test_submit_quiz_requires_five_sets_plus_page_and_average_to_advance_topic(tmp_path):
     service = build_learning_service(tmp_path)
     intro = service.start_or_resume_session()

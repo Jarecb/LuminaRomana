@@ -15,6 +15,8 @@
 - [Stage 9: Quality Hardening](#stage-9-quality-hardening)
 - [Stage 10: Packaging and Deployment](#stage-10-packaging-and-deployment)
 - [Stage 11: Incorrect Answer Mastery Gate](#stage-11-incorrect-answer-mastery-gate)
+- [Stage 12: Offline-Only Server Startup Mode](#stage-12-offline-only-server-startup-mode)
+- [Bug Backlog and Technical Solution Summary](#bug-backlog-and-technical-solution-summary)
 - [Recommended Build Order](#recommended-build-order)
 - [Milestones](#milestones)
 - [Immediate Next Steps](#immediate-next-steps)
@@ -506,6 +508,53 @@ Implementation notes:
 Notes:
 - Offline-only mode applies to the current server process only and does not disable AI-backed maintenance commands unless they are started with the same override
 - In offline-only mode, lesson generation uses deterministic fallback lessons plus any archived offline question-bank entries already stored in SQLite
+
+## Bug Backlog and Technical Solution Summary
+
+Source: `BUGS.md`
+
+### Bug 1: Secondary words from examples are not added to the wordbank
+Problem:
+- New vocabulary extraction appears to capture only primary prompt-answer terms and misses secondary tokens that appear in example sentences, explanations, or supporting context
+
+Technical solution summary:
+- Centralize vocabulary extraction in a single normalization pipeline used for both AI-generated and fallback lessons
+- Extend extraction to scan:
+  prompts, answer choices, worked examples, explanations, and sentence-level supporting text
+- Normalize tokens before persistence so accented and unaccented variants, punctuation, and casing do not create duplicate or missed entries
+- Add repository-level deduplication keyed by normalized lemma or surface form plus learner context where needed
+- Add regression coverage proving that words introduced only in example sentences are archived into the wordbank
+
+### Bug 2: Add accent-entry buttons for Romanian characters
+Problem:
+- Learners currently depend on their keyboard layout to enter Romanian diacritics, which makes writing answers harder on standard English keyboards
+
+Technical solution summary:
+- Add a reusable Romanian character toolbar in the web UI for `ă`, `â`, `î`, `ș`, and `ț`, including uppercase variants where relevant
+- Wire the buttons to insert characters at the current caret position for text inputs and textareas without overwriting existing content
+- Reuse the component across quiz, writing, and any free-response form fields
+- Add browser tests covering insertion behavior, focus retention, and multi-character editing flows
+
+### Bug 3: `run_server.bat` should prompt for offline or online mode
+Problem:
+- The current batch entrypoint requires the mode to be decided externally instead of guiding the user at startup
+
+Technical solution summary:
+- Update `run_server.bat` to prompt interactively for offline-only versus AI-backed startup when no explicit mode argument is supplied
+- Preserve explicit command-line overrides so scripted usage remains deterministic
+- Route offline selection to the existing `--offline` server path and retain the API-key validation only for online mode
+- Keep the prompt Windows-native and fail fast on invalid input with a clear retry or exit path
+
+### Bug 4: Some question text shows mojibake instead of Romanian diacritics
+Problem:
+- Text such as `TransformÄƒ` indicates an encoding mismatch between generation, storage, and rendering
+
+Technical solution summary:
+- Audit the lesson-content path end to end:
+  provider response decoding, JSON parsing, SQLite persistence, offline archive reads, and HTML rendering
+- Standardize all lesson and question text handling on UTF-8 and ensure batch or console scripts do not re-encode content through a legacy code page
+- Add a defensive text-normalization or validation check that flags mojibake patterns before learner-facing render
+- Add regression tests using Romanian diacritics across stored lessons, offline questions, and rendered pages
 
 ## Recommended Build Order
 1. Stage 0
