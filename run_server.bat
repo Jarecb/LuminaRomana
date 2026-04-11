@@ -15,9 +15,6 @@ set "LUMINA_ROMANA_AI_ENABLED=true"
 set "LUMINA_ROMANA_AI_PROVIDER=gemini"
 set "LUMINA_ROMANA_AI_MODEL=gemini-2.5-flash"
 set "LUMINA_ROMANA_AI_API_KEY=AIzaSyC2mCeluucZqb1JtEV0rpVeZD36XjCpv88"
-rem set "LUMINA_ROMANA_AI_BASE_URL=https://api.openai.com/v1"
-rem set "LUMINA_ROMANA_AI_TIMEOUT_SECONDS=30"
-rem set "LUMINA_ROMANA_AI_MAX_RETRIES=2"
 
 set "PYTHON_EXE=python"
 if exist ".venv\Scripts\python.exe" (
@@ -29,6 +26,7 @@ if "%LUMINA_COMMAND%"=="" (
     set "LUMINA_COMMAND=serve"
 )
 
+rem Check if offline was already passed via command line arguments
 set "LUMINA_OFFLINE_ONLY=false"
 for %%A in (%LUMINA_COMMAND%) do (
     if /I "%%~A"=="-o" set "LUMINA_OFFLINE_ONLY=true"
@@ -36,10 +34,24 @@ for %%A in (%LUMINA_COMMAND%) do (
     if /I "%%~A"=="--offline" set "LUMINA_OFFLINE_ONLY=true"
 )
 
+rem If not explicitly set to offline via args, ask the user
+if /I "%LUMINA_OFFLINE_ONLY%"=="false" (
+    echo.
+    echo ========================================
+    echo  Select Execution Mode:
+    echo  [1] Online - AI Enabled
+    echo  [2] Offline - Local Only
+    echo ========================================
+    choice /c 12 /n /m "Enter your choice (1 or 2): "
+
+    if errorlevel 2 (
+        set "LUMINA_OFFLINE_ONLY=true"
+    )
+)
+
 if /I not "%LUMINA_OFFLINE_ONLY%"=="true" if /I "%LUMINA_ROMANA_AI_ENABLED%"=="true" if "%LUMINA_ROMANA_AI_API_KEY%"=="" (
     echo LUMINA_ROMANA_AI_API_KEY is empty in run_server.bat.
     echo Edit run_server.bat and set your Gemini or Copilot/OpenAI-compatible API key first.
-    echo Or start with `.\run_server.bat serve --offline` to force offline-only mode.
     pause
     exit /b 1
 )
@@ -49,6 +61,7 @@ if /I "%LUMINA_OFFLINE_ONLY%"=="true" (
     set "LUMINA_MODE_LABEL=offline-only"
 )
 
+echo.
 echo Starting Lumina Romana...
 echo Host:     %LUMINA_ROMANA_WEB_HOST%
 echo Port:     %LUMINA_ROMANA_WEB_PORT%
@@ -57,6 +70,7 @@ echo Mode:     %LUMINA_MODE_LABEL%
 echo Provider: %LUMINA_ROMANA_AI_PROVIDER%
 echo Model:    %LUMINA_ROMANA_AI_MODEL%
 echo Command:  %LUMINA_COMMAND%
+echo.
 
 "%PYTHON_EXE%" main.py %LUMINA_COMMAND%
 set "EXIT_CODE=%ERRORLEVEL%"
