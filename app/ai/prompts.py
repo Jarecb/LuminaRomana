@@ -51,6 +51,8 @@ class LessonPromptBuilder:
             "Use those exact snake_case key names and include every required field. "
             "The top-level difficulty field is mandatory and must be an integer from 1 to 10. "
             "Each example_sentences item must have romanian and english. "
+            "Write explanation_text, every key_rules item, every example_sentences.english value, every quiz question prompt, every quiz question explanation, and every hint in clear English for the learner. "
+            "Only example_sentences.romanian, Romanian answer choices, quoted Romanian source snippets, and correct_answer values for Romanian-output tasks should be in Romanian. "
             "Each quiz_questions item must include question_id, type, prompt, options, correct_answer, explanation, difficulty, tags, hint, rubric, and cefr_band. "
             f"Allowed question type values are exactly: {allowed_question_types}. "
             "Do not invent aliases such as translation, multiple-choice, rewrite_sentence, reading, or writing_prompt. "

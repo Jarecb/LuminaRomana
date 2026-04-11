@@ -129,6 +129,59 @@ def test_content_validator_rejects_duplicate_options():
     assert any("Options must be unique" in message for message in messages)
 
 
+def test_content_validator_rejects_romanian_learner_guidance_fields():
+    content_library = ContentLibrary()
+    validator = ContentValidator()
+    topic = content_library.get_topic("nouns_and_articles")
+    assert topic is not None
+    payload = {
+        "lesson_id": "lesson-language-bad",
+        "topic": "nouns_and_articles",
+        "level": 2,
+        "cefr_band": "A1",
+        "difficulty": 2,
+        "explanation_text": (
+            "In limba romana, substantivele sunt insotite de articole care indica daca substantivul "
+            "este specific sau nespecific."
+        ),
+        "example_sentences": [
+            {
+                "romanian": "Cartea este pe masa.",
+                "english": "Cartea este pe masa si eu o caut acum.",
+            }
+        ],
+        "key_rules": [
+            "Articolele definite se ataseaza la sfarsitul substantivului.",
+        ],
+        "quiz_questions": [
+            {
+                "question_id": "q1",
+                "type": "multiple_choice",
+                "prompt": "Alege forma corecta: baiat ___ aici.",
+                "options": ["ul", "a"],
+                "correct_answer": "ul",
+                "explanation": "Forma corecta foloseste articolul hotarat masculin singular.",
+                "difficulty": 2,
+                "tags": ["nouns_and_articles"],
+                "hint": "Gandeste-te la forma definita.",
+                "rubric": {},
+                "cefr_band": "A1",
+            },
+        ],
+    }
+
+    with pytest.raises(ContentValidationError) as exc_info:
+        validator.validate_lesson_payload(payload, topic=topic, expected_question_count=1)
+
+    paths = {issue.path for issue in exc_info.value.issues}
+    assert "explanation_text" in paths
+    assert "example_sentences[0].english" in paths
+    assert "key_rules[0]" in paths
+    assert "quiz_questions[0].prompt" in paths
+    assert "quiz_questions[0].explanation" in paths
+    assert "quiz_questions[0].hint" in paths
+
+
 def test_content_validator_accepts_b1_transformation_and_dialogue_tasks():
     content_library = ContentLibrary()
     validator = ContentValidator()

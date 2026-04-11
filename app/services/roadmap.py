@@ -955,6 +955,7 @@ class ContentLibrary:
         difficulty: int,
         question_count: int,
         session_goal: str = "lesson",
+        include_archived_questions: bool = True,
         excluded_question_keys: tuple[tuple[str, str, str, str], ...] = (),
     ) -> Lesson:
         topic = self._require_topic(topic_id)
@@ -965,10 +966,15 @@ class ContentLibrary:
         question_templates = self._fallback_question_pool(
             topic_id,
             template.questions,
+            include_archived_questions=include_archived_questions,
             excluded_question_keys=excluded_question_keys,
         )
         if not question_templates:
-            question_templates = self._fallback_question_pool(topic_id, template.questions)
+            question_templates = self._fallback_question_pool(
+                topic_id,
+                template.questions,
+                include_archived_questions=include_archived_questions,
+            )
         selected_templates = self._select_fallback_questions(question_templates, question_count)
         questions: list[Question] = []
         for index, base in enumerate(selected_templates, start=1):
@@ -1014,10 +1020,11 @@ class ContentLibrary:
         topic_id: str,
         templates: tuple[FallbackQuestionTemplate, ...],
         *,
+        include_archived_questions: bool = True,
         excluded_question_keys: tuple[tuple[str, str, str, str], ...] = (),
     ) -> tuple[FallbackQuestionTemplate, ...]:
         combined: list[FallbackQuestionTemplate] = list(templates)
-        if self._offline_question_repository is not None:
+        if include_archived_questions and self._offline_question_repository is not None:
             combined.extend(
                 self._question_to_template(question)
                 for question in self._offline_question_repository.list_for_topic(topic_id)

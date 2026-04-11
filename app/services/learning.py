@@ -290,7 +290,11 @@ class LearningService:
             attempt.lesson_id for attempt in self.quiz_attempt_repository.list_for_user(user_id, limit=50)
         }
         for lesson in lessons:
-            if lesson.lesson_id not in attempted_lesson_ids and self._lesson_is_resume_ready(lesson):
+            if (
+                lesson.lesson_id not in attempted_lesson_ids
+                and self._lesson_is_resume_ready(lesson)
+                and not self._lesson_has_non_english_guidance(lesson)
+            ):
                 return lesson
         return None
 
@@ -422,6 +426,12 @@ class LearningService:
                 session_goal=session_goal,
                 excluded_question_keys=set(excluded_question_keys),
             )
+            lesson, guidance_warnings = self._ensure_english_guidance_lesson(
+                topic_id=topic_id,
+                lesson=lesson,
+                session_goal=session_goal,
+                excluded_question_keys=set(excluded_question_keys),
+            )
             if session_goal == "practice" and not self._is_practice_lesson(lesson):
                 lesson.lesson_id = f"practice-{topic_id}-{uuid4()}"
 
@@ -436,7 +446,7 @@ class LearningService:
                 resumed=False,
                 source=result.source,
                 lesson=lesson,
-                warnings=(*result.warnings, *cooldown_warnings, *dedupe_warnings),
+                warnings=(*result.warnings, *cooldown_warnings, *dedupe_warnings, *guidance_warnings),
             )
 
         except Exception as e:
@@ -1085,6 +1095,34 @@ class LearningService:
             question.prompt.strip().casefold(),
             question.correct_answer.strip().casefold(),
         )
+
+    def _ensure_english_guidance_lesson(
+        self,
+        *,
+        topic_id: str,
+        lesson: Lesson,
+        session_goal: str,
+        excluded_question_keys: set[tuple[str, str, str, str]],
+    ) -> tuple[Lesson, tuple[str, ...]]:
+        if not self._lesson_has_non_english_guidance(lesson):
+            return lesson, ()
+
+        replacement_lesson = self.content_library.build_fallback_lesson(
+            topic_id,
+            difficulty=lesson.difficulty,
+            question_count=len(lesson.quiz_questions),
+            session_goal=session_goal,
+            include_archived_questions=False,
+            excluded_question_keys=tuple(excluded_question_keys),
+        )
+        return replacement_lesson, (
+            "Replaced lesson content because some learner-facing guidance was in Romanian instead of English.",
+        )
+
+    def _lesson_has_non_english_guidance(self, lesson: Lesson) -> bool:
+        if not hasattr(self.ai_service, "content_validator"):
+            return False
+        return bool(self.ai_service.content_validator.english_guidance_issues(lesson))
 
     def _normalize_answer(self, value: str) -> str:
         normalized = re.sub(r"\s+", " ", value.strip()).casefold()

@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, ClassVar
 
 from app.models import CEFRBand, ExampleSentence, Lesson, Question, QuestionType, TopicMetadata
 
@@ -53,7 +54,7 @@ def lesson_to_payload(lesson: Lesson) -> dict[str, Any]:
 
 @dataclass(slots=True)
 class ContentValidator:
-    banned_terms: tuple[str, ...] = (
+    banned_terms: ClassVar[tuple[str, ...]] = (
         "dragon",
         "zombie",
         "alien invasion",
@@ -62,7 +63,7 @@ class ContentValidator:
         "teleport",
         "quantum reactor",
     )
-    open_response_types: tuple[QuestionType, ...] = (
+    open_response_types: ClassVar[tuple[QuestionType, ...]] = (
         QuestionType.ENGLISH_TO_ROMANIAN,
         QuestionType.ROMANIAN_TO_ENGLISH,
         QuestionType.FILL_IN_THE_BLANK,
@@ -70,6 +71,177 @@ class ContentValidator:
         QuestionType.GUIDED_WRITING,
         QuestionType.READING_COMPREHENSION,
         QuestionType.DIALOGUE_COMPLETION,
+    )
+    english_signal_words: ClassVar[frozenset[str]] = frozenset(
+        {
+            "a",
+            "an",
+            "answer",
+            "article",
+            "articles",
+            "because",
+            "book",
+            "choose",
+            "complete",
+            "correct",
+            "dialogue",
+            "english",
+            "example",
+            "examples",
+            "explanation",
+            "fill",
+            "form",
+            "forms",
+            "give",
+            "grammar",
+            "guide",
+            "hint",
+            "in",
+            "into",
+            "lesson",
+            "match",
+            "noun",
+            "nouns",
+            "please",
+            "prompt",
+            "question",
+            "read",
+            "reply",
+            "response",
+            "rewrite",
+            "rule",
+            "rules",
+            "sentence",
+            "sentences",
+            "singular",
+            "some",
+            "subject",
+            "table",
+            "the",
+            "these",
+            "this",
+            "to",
+            "translate",
+            "use",
+            "verb",
+            "what",
+            "while",
+            "write",
+            "you",
+            "your",
+        }
+    )
+    romanian_signal_words: ClassVar[frozenset[str]] = frozenset(
+        {
+            "alege",
+            "acesta",
+            "acestea",
+            "acestui",
+            "acum",
+            "acordul",
+            "articol",
+            "articole",
+            "articolele",
+            "articolul",
+            "atasat",
+            "ataseaza",
+            "baiat",
+            "baiatul",
+            "cartea",
+            "cinema",
+            "copii",
+            "copiii",
+            "copil",
+            "copiii",
+            "cu",
+            "dai",
+            "definita",
+            "definite",
+            "definit",
+            "deoarece",
+            "determin",
+            "determinat",
+            "desi",
+            "corecta",
+            "completeaza",
+            "este",
+            "exemplu",
+            "exemple",
+            "fata",
+            "fetele",
+            "film",
+            "forma",
+            "foloseste",
+            "fratele",
+            "gandeste",
+            "gen",
+            "gindeste",
+            "hotarat",
+            "hotarate",
+            "hotarit",
+            "indica",
+            "insotite",
+            "iar",
+            "interesant",
+            "limba",
+            "masa",
+            "masculin",
+            "mi",
+            "ni",
+            "niste",
+            "nehotarat",
+            "numar",
+            "parc",
+            "pe",
+            "propozitia",
+            "reguli",
+            "romana",
+            "romane",
+            "sau",
+            "scaunele",
+            "se",
+            "sfarsit",
+            "singular",
+            "specific",
+            "stau",
+            "substantiv",
+            "substantive",
+            "substantivele",
+            "substantivul",
+            "sint",
+            "sunt",
+            "te",
+            "textul",
+            "transforma",
+            "un",
+            "unei",
+            "urma",
+            "va",
+        }
+    )
+    _word_pattern: ClassVar[re.Pattern[str]] = re.compile(
+        r"[A-Za-z\u0102\u0103\u00C2\u00E2\u00CE\u00EE\u0218\u0219\u021A\u021B\u015E\u015F\u0162\u0163]+"
+    )
+    _romanian_characters: ClassVar[frozenset[str]] = frozenset(
+        "\u0103\u00E2\u00EE\u0219\u021B\u015F\u0163\u0102\u00C2\u00CE\u0218\u021A\u015E\u0162"
+    )
+    _romanian_translation_table: ClassVar[dict[int, str]] = str.maketrans(
+        {
+            "\u0103": "a",
+            "\u00E2": "a",
+            "\u00EE": "i",
+            "\u0219": "s",
+            "\u021B": "t",
+            "\u015F": "s",
+            "\u0163": "t",
+            "\u0102": "a",
+            "\u00C2": "a",
+            "\u00CE": "i",
+            "\u0218": "s",
+            "\u021A": "t",
+            "\u015E": "s",
+            "\u0162": "t",
+        }
     )
 
     def validate_lesson_payload(
@@ -92,6 +264,11 @@ class ContentValidator:
         if issues:
             raise ContentValidationError(tuple(issues))
         return lesson
+
+    def english_guidance_issues(self, lesson: Lesson) -> tuple[ValidationIssue, ...]:
+        issues: list[ValidationIssue] = []
+        self._validate_learner_guidance_language(lesson, issues)
+        return tuple(issues)
 
     def _validate_top_level(
         self,
@@ -313,6 +490,7 @@ class ContentValidator:
         }
 
         self._check_text("explanation_text", lesson.explanation_text, issues, max_length=800)
+        self._validate_learner_guidance_language(lesson, issues)
         seen_prompts: set[str] = set()
         integrated_count = 0
         guided_writing_count = 0
@@ -422,6 +600,57 @@ class ContentValidator:
                 issues.append(ValidationIssue(path="quiz_questions", message="B2 lessons need at least one guided writing task."))
             if reading_count < 1:
                 issues.append(ValidationIssue(path="quiz_questions", message="B2 lessons need at least one reading comprehension task."))
+
+    def _validate_learner_guidance_language(
+        self,
+        lesson: Lesson,
+        issues: list[ValidationIssue],
+    ) -> None:
+        self._check_expected_english("explanation_text", lesson.explanation_text, issues)
+        for index, sentence in enumerate(lesson.example_sentences):
+            self._check_expected_english(f"example_sentences[{index}].english", sentence.english, issues)
+        for index, rule in enumerate(lesson.key_rules):
+            self._check_expected_english(f"key_rules[{index}]", rule, issues)
+        for index, question in enumerate(lesson.quiz_questions):
+            self._check_expected_english(f"quiz_questions[{index}].prompt", question.prompt, issues)
+            self._check_expected_english(f"quiz_questions[{index}].explanation", question.explanation, issues)
+            if question.hint:
+                self._check_expected_english(f"quiz_questions[{index}].hint", question.hint, issues)
+
+    def _check_expected_english(
+        self,
+        path: str,
+        value: str,
+        issues: list[ValidationIssue],
+    ) -> None:
+        if self._looks_predominantly_romanian(value):
+            issues.append(
+                ValidationIssue(
+                    path=path,
+                    message="Learner-facing guidance must be written in English, not Romanian.",
+                )
+            )
+
+    def _looks_predominantly_romanian(self, value: str) -> bool:
+        lowered = value.strip().casefold()
+        if len(lowered) < 5:
+            return False
+
+        romanian_score = 0
+        if any(character in self._romanian_characters for character in lowered):
+            romanian_score += 2
+
+        normalized = lowered.translate(self._romanian_translation_table)
+        tokens = self._word_pattern.findall(normalized)
+        if not tokens:
+            return False
+
+        english_score = sum(token in self.english_signal_words for token in tokens)
+        romanian_score += sum(token in self.romanian_signal_words for token in tokens)
+
+        if romanian_score >= 4 and english_score == 0:
+            return True
+        return romanian_score >= english_score + 3
 
     def _check_text(
         self,

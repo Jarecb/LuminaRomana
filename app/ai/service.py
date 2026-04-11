@@ -245,6 +245,7 @@ class AIService:
                 difficulty=fallback_difficulty,
                 question_count=request.question_count,
                 session_goal=request.session_goal,
+                include_archived_questions=False,
                 excluded_question_keys=request.excluded_question_keys,
             )
             return LessonGenerationResult(

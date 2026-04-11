@@ -5,7 +5,7 @@ import logging
 from app.ai import AIService, PromptBuilder
 from app.ai.types import LessonGenerationResult
 from app.ai.providers import DisabledAIProvider
-from app.models import CEFRBand, Lesson, Question, QuestionType, UserProgress
+from app.models import CEFRBand, ExampleSentence, Lesson, Question, QuestionType, UserProgress
 from app.services import ContentLibrary, DifficultyManager
 from app.services.learning import LearningService
 from app.storage import (
@@ -108,6 +108,48 @@ def test_start_or_resume_lesson_session_adds_example_sentence_words_to_wordbank(
         entry.word == "ana" and entry.definition == "Seen in example: Hello, I am Ana."
         for entry in wordbank.entries
     )
+
+
+def test_start_or_resume_lesson_session_skips_stored_lessons_with_romanian_guidance(tmp_path):
+    service = build_learning_service(tmp_path)
+    service.get_or_create_user_progress()
+    bad_lesson = Lesson(
+        lesson_id="stored-language-bad",
+        topic="nouns_and_articles",
+        level=2,
+        cefr_band=CEFRBand.A1,
+        difficulty=2,
+        explanation_text="In limba romana, substantivele sint insotite de articole.",
+        example_sentences=[
+            ExampleSentence(
+                romanian="Cartea este pe masa.",
+                english="Cartea este pe masa si eu o caut acum.",
+            )
+        ],
+        key_rules=["Articolele definite se ataseaza la sfirsitul substantivului."],
+        quiz_questions=[
+            Question(
+                question_id="bad-q1",
+                prompt="Alege forma corecta: baiat ___ aici.",
+                question_type=QuestionType.MULTIPLE_CHOICE,
+                difficulty_rating=2,
+                cefr_band=CEFRBand.A1,
+                correct_answer="ul",
+                explanation="Forma corecta foloseste articolul hotarit.",
+                tags=["nouns_and_articles"],
+                options=["ul", "a"],
+                hint="Gindeste-te la forma definita.",
+            )
+        ],
+    )
+    service.lesson_repository.save("default-learner", bad_lesson)
+
+    session = service.start_or_resume_lesson_session()
+
+    assert session.resumed is False
+    assert session.lesson is not None
+    assert session.lesson.lesson_id != bad_lesson.lesson_id
+    assert session.source == "fallback"
 
 
 def test_submit_quiz_requires_five_sets_plus_page_and_average_to_advance_topic(tmp_path):

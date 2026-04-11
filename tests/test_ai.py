@@ -102,6 +102,7 @@ def test_prompt_builder_uses_topic_difficulty_cefr_and_focus_tags():
     assert "Recommended next difficulty from the adaptive engine: 5." in prompt.messages[1].content
     assert "Focus tags from recent learner errors: feminine_endings, object_pronouns." in prompt.messages[1].content
     assert "The top-level difficulty field is mandatory and must be an integer from 1 to 10." in prompt.messages[1].content
+    assert "Write explanation_text, every key_rules item" in prompt.messages[1].content
     assert "Allowed question type values are exactly:" in prompt.messages[1].content
     assert "Length limits are strict: explanation_text <= 800 characters;" in prompt.messages[1].content
     assert "Every guided_writing rubric must have at least two named criteria" in prompt.messages[1].content
@@ -837,6 +838,76 @@ def test_gemini_provider_uses_system_instruction_and_json_mime_type(monkeypatch)
     assert captured["body"]["contents"][0]["parts"][0]["text"] == "Generate a lesson for nouns_and_articles."
     assert "romanian_basics" not in json.dumps(captured["body"])
     assert response.provider_name == "gemini"
+
+
+def test_ai_service_falls_back_when_guidance_text_is_in_romanian():
+    provider = StubProvider(
+        responses=[
+            AIProviderResponse(
+                provider_name="stub",
+                model="stub-model",
+                content=json.dumps(
+                    {
+                        "lesson_id": "lesson-language-bad",
+                        "topic": "nouns_and_articles",
+                        "level": 2,
+                        "cefr_band": "A1",
+                        "difficulty": 2,
+                        "explanation_text": "In limba romana, substantivele primesc articole definite si nehotarate.",
+                        "example_sentences": [
+                            {
+                                "romanian": "Cartea este pe masa.",
+                                "english": "Cartea este pe masa si eu o caut acum.",
+                            }
+                        ],
+                        "key_rules": ["Articolele definite se ataseaza la sfarsitul substantivului."],
+                        "quiz_questions": [
+                            {
+                                "question_id": "q1",
+                                "type": "multiple_choice",
+                                "prompt": "Alege forma corecta: baiat ___ aici.",
+                                "options": ["ul", "a"],
+                                "correct_answer": "ul",
+                                "explanation": "Forma corecta foloseste articolul hotarat.",
+                                "difficulty": 2,
+                                "tags": ["nouns_and_articles"],
+                                "hint": "Gandeste-te la forma definita.",
+                                "rubric": {},
+                                "cefr_band": "A1",
+                            }
+                        ],
+                    }
+                ),
+            )
+        ]
+    )
+    content_library = ContentLibrary()
+    service = AIService(
+        provider=provider,
+        prompt_builder=PromptBuilder(),
+        content_library=content_library,
+        difficulty_manager=DifficultyManager(content_library),
+        content_validator=ContentValidator(),
+        logger=logging.getLogger("test.ai.language"),
+        max_retries=0,
+    )
+
+    result = service.generate_lesson(
+        LessonGenerationRequest(
+            user_progress=UserProgress(
+                user_id="learner-1",
+                current_level=2,
+                current_cefr_band=CEFRBand.A1,
+                current_difficulty=2,
+            ),
+            topic_id="nouns_and_articles",
+            question_count=1,
+        )
+    )
+
+    assert result.source == "fallback"
+    assert "definite article" in result.lesson.explanation_text
+    assert "noun" in result.lesson.explanation_text
 
 
 def test_gemini_provider_treats_connection_reset_as_transient(monkeypatch):
