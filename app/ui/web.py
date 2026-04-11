@@ -19,6 +19,7 @@ from app.services.learning import (
 )
 
 HTMLResponse = tuple[str, list[tuple[str, str]], bytes]
+ROMANIAN_CHARACTERS = ("ă", "â", "î", "ș", "ț", "Ă", "Â", "Î", "Ș", "Ț")
 
 
 @dataclass(slots=True)
@@ -437,21 +438,63 @@ class WebApp:
                 for option in options
             )
         elif question.question_type == QuestionType.GUIDED_WRITING:
-            fields = (
-                f"<label><span>Your response</span>"
-                f"<textarea name='answer_{escape(question_id)}' rows='6' placeholder='Write two or three connected Romanian sentences.'></textarea></label>"
+            fields = self._render_response_field(
+                question_id,
+                label="Your response",
+                multiline=True,
+                rows=6,
+                placeholder="Write two or three connected Romanian sentences.",
             )
         else:
-            fields = (
-                f"<label><span>Your answer</span>"
-                f"<input type='text' name='answer_{escape(question_id)}'></label>"
-            )
+            fields = self._render_response_field(question_id, label="Your answer")
         hint_markup = f"<p class='hint'>Hint: {escape(hint)}</p>" if hint else ""
         task_label = self._question_type_label(question.question_type)
         return (
             f"<fieldset class='question {escape(question.question_type.value)}'>"
             f"<legend><span class='task-type'>{escape(task_label)}</span>{prompt_markup}</legend>"
             f"{rubric_markup}{fields}{hint_markup}</fieldset>"
+        )
+
+    def _render_response_field(
+        self,
+        question_id: str,
+        *,
+        label: str,
+        multiline: bool = False,
+        rows: int = 6,
+        placeholder: str = "",
+    ) -> str:
+        field_id = f"answer-field-{question_id}"
+        escaped_field_id = escape(field_id)
+        escaped_question_id = escape(question_id)
+        escaped_placeholder = escape(placeholder)
+        if multiline:
+            field_markup = (
+                f"<textarea id='{escaped_field_id}' name='answer_{escaped_question_id}' rows='{rows}' "
+                f"placeholder='{escaped_placeholder}' data-romanian-input='true'></textarea>"
+            )
+        else:
+            field_markup = (
+                f"<input id='{escaped_field_id}' type='text' name='answer_{escaped_question_id}' "
+                f"placeholder='{escaped_placeholder}' data-romanian-input='true'>"
+            )
+        return (
+            "<div class='response-field'>"
+            f"<label for='{escaped_field_id}'><span>{escape(label)}</span>{field_markup}</label>"
+            f"{self._render_romanian_character_toolbar(field_id)}"
+            "</div>"
+        )
+
+    def _render_romanian_character_toolbar(self, target_id: str) -> str:
+        keys = "".join(
+            f"<button type='button' class='romanian-key' data-romanian-char='{escape(character)}' "
+            f"data-target='{escape(target_id)}' aria-label='Insert {escape(character)}'>{escape(character)}</button>"
+            for character in ROMANIAN_CHARACTERS
+        )
+        return (
+            f"<div class='romanian-toolbar' data-romanian-toolbar='true' data-target='{escape(target_id)}'>"
+            "<span class='toolbar-label'>Romanian characters</span>"
+            f"{keys}</div>"
         )
 
     def _format_prompt(self, prompt: str) -> str:
@@ -613,6 +656,27 @@ class WebApp:
     .option, .question label {{ display: block; margin: .45rem 0; }}
     input[type=text], textarea {{ width: 100%; padding: .7rem .8rem; border-radius: 12px; border: 1px solid var(--line); background: white; font: inherit; }}
     textarea {{ resize: vertical; min-height: 8rem; }}
+    .response-field {{ display: grid; gap: .55rem; }}
+    .romanian-toolbar {{
+      display: flex;
+      flex-wrap: wrap;
+      gap: .4rem;
+      align-items: center;
+      padding: .65rem .75rem;
+      border-radius: 14px;
+      border: 1px solid var(--line);
+      background: rgba(175,62,47,.05);
+    }}
+    .toolbar-label {{ color: var(--muted); font-size: .88rem; margin-right: .25rem; }}
+    .romanian-key {{
+      min-width: 2.25rem;
+      padding: .45rem .7rem;
+      border-radius: 10px;
+      border: 1px solid rgba(175,62,47,.22);
+      background: white;
+      color: var(--accent-dark);
+      font-weight: 700;
+    }}
     blockquote {{ margin: .7rem 0; padding: .8rem 1rem; border-left: 4px solid var(--accent); background: rgba(175,62,47,.06); }}
     .rubric {{ margin-bottom: .8rem; padding: .75rem .85rem; border-radius: 14px; background: rgba(31,36,33,.04); border: 1px solid var(--line); }}
     .rubric ul {{ margin: .45rem 0 0; }}
@@ -646,6 +710,32 @@ class WebApp:
 </head>
 <body>
   <main>{self._runtime_mode_banner()}{body}</main>
+  <script>
+    document.addEventListener("click", function(event) {{
+      var button = event.target.closest("[data-romanian-char]");
+      if (!button) {{
+        return;
+      }}
+      var targetId = button.getAttribute("data-target");
+      var character = button.getAttribute("data-romanian-char") || "";
+      var field = targetId ? document.getElementById(targetId) : null;
+      if (!field) {{
+        return;
+      }}
+      event.preventDefault();
+      var start = typeof field.selectionStart === "number" ? field.selectionStart : field.value.length;
+      var end = typeof field.selectionEnd === "number" ? field.selectionEnd : field.value.length;
+      var prefix = field.value.slice(0, start);
+      var suffix = field.value.slice(end);
+      field.value = prefix + character + suffix;
+      var nextCaret = start + character.length;
+      field.focus();
+      if (typeof field.setSelectionRange === "function") {{
+        field.setSelectionRange(nextCaret, nextCaret);
+      }}
+      field.dispatchEvent(new Event("input", {{ bubbles: true }}));
+    }});
+  </script>
 </body>
 </html>"""
 

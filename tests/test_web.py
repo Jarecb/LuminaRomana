@@ -179,6 +179,56 @@ def test_wordbank_search_finds_encountered_words(monkeypatch, tmp_path):
     assert "hello" in search_html
 
 
+def test_free_response_questions_render_romanian_character_toolbar(monkeypatch, tmp_path):
+    monkeypatch.setenv("LUMINA_ROMANA_ENV", "test")
+    monkeypatch.setenv("LUMINA_ROMANA_DATA_DIR", str(tmp_path / "data"))
+    web_app = create_web_app(create_application())
+
+    translation_question = Question(
+        question_id="translate-1",
+        prompt="Translate 'good morning' to Romanian.",
+        question_type=QuestionType.ENGLISH_TO_ROMANIAN,
+        difficulty_rating=2,
+        cefr_band=CEFRBand.A1,
+        correct_answer="buna dimineata",
+        explanation="Use the standard greeting.",
+        tags=["romanian_basics"],
+    )
+    writing_question = Question(
+        question_id="writing-1",
+        prompt="Write two Romanian sentences about your plans.",
+        question_type=QuestionType.GUIDED_WRITING,
+        difficulty_rating=6,
+        cefr_band=CEFRBand.B1,
+        correct_answer="Voi studia maine. Apoi voi iesi cu prietenii.",
+        explanation="A connected response should use two complete sentences.",
+        tags=["connected_communication"],
+    )
+
+    translation_html = web_app._render_question_block(translation_question)
+    writing_html = web_app._render_question_block(writing_question)
+
+    assert "data-romanian-toolbar='true'" in translation_html
+    assert "data-target='answer-field-translate-1'" in translation_html
+    assert "data-romanian-char='ă'" in translation_html
+    assert "data-romanian-char='Ț'" in translation_html
+    assert "type='text'" in translation_html
+    assert "textarea" in writing_html
+    assert "data-target='answer-field-writing-1'" in writing_html
+
+
+def test_multiple_choice_questions_do_not_render_romanian_character_toolbar(monkeypatch, tmp_path):
+    monkeypatch.setenv("LUMINA_ROMANA_ENV", "test")
+    monkeypatch.setenv("LUMINA_ROMANA_DATA_DIR", str(tmp_path / "data"))
+    web_app = create_web_app(create_application())
+
+    question = build_offline_question("romanian_basics", 1)
+    html = web_app._render_question_block(question)
+
+    assert "data-romanian-toolbar='true'" not in html
+    assert "data-romanian-char=" not in html
+
+
 def test_b2_lesson_page_renders_reading_and_writing_workflow(monkeypatch, tmp_path):
     monkeypatch.setenv("LUMINA_ROMANA_ENV", "test")
     monkeypatch.setenv("LUMINA_ROMANA_DATA_DIR", str(tmp_path / "data"))
@@ -214,6 +264,8 @@ def test_b2_lesson_page_renders_reading_and_writing_workflow(monkeypatch, tmp_pa
     assert "<textarea" in lesson_html
     assert "Scoring focus" in lesson_html
     assert "<blockquote>" in lesson_html
+    assert "Romanian characters" in lesson_html
+    assert "selectionStart" in lesson_html
     assert progress_status == "200 OK"
     assert "Skill signals" in progress_html
 
