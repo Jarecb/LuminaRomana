@@ -285,6 +285,72 @@ class AIService:
                 exc_info=True,
             )
 
+    def generate_glosses(self, words: Sequence[str]) -> dict[str, str]:
+        """Ask the configured AI provider to produce concise English glosses for given Romanian words/phrases.
+
+        Returns a mapping from the exact input string to the gloss. On error or if AI isn't configured,
+        returns an empty dict.
+        """
+        result: dict[str, str] = {}
+        try:
+            if not self.providers:
+                return result
+            if not words:
+                return result
+            # Deduplicate while preserving order
+            seen: set[str] = set()
+            unique_words: list[str] = []
+            for w in words:
+                if w in seen:
+                    continue
+                seen.add(w)
+                unique_words.append(w)
+
+            # Build a compact prompt asking for a JSON object mapping input -> gloss
+            system = (
+                "You are a bilingual assistant that converts Romanian words or short phrases into concise English glosses. "
+                "Return valid JSON only: an object where each key is the exact Romanian input and each value is a brief English gloss (1-4 words)."
+            )
+            user_lines = ["Provide glosses for the following Romanian items:"]
+            for w in unique_words:
+                user_lines.append(f"- {w}")
+            user_lines.append("Respond only with JSON mapping each original item to a short English gloss.")
+            user_msg = "\n".join(user_lines)
+
+            from app.ai.types import AIMessage
+
+            messages = (AIMessage(role="system", content=system), AIMessage(role="user", content=user_msg))
+            provider = self.provider
+            # Use low temperature for deterministic glosses
+            response = provider.generate_json(messages, temperature=0.0)
+            try:
+                parsed = json.loads(response.content)
+                if isinstance(parsed, dict):
+                    for k, v in parsed.items():
+                        if isinstance(k, str) and isinstance(v, str):
+                            result[k.strip()] = v.strip()
+            except json.JSONDecodeError:
+                self.logger.warning("Could not parse glosses JSON from provider: %s", response.content)
+        except Exception:
+            self.logger.exception("generate_glosses failed")
+        return result
+
+        if self.offline_question_repository is None:
+            return
+        try:
+            self.offline_question_repository.upsert_questions(
+                topic_id,
+                lesson.quiz_questions,
+                provider_name=provider_name,
+                model=model,
+            )
+        except Exception:
+            self.logger.warning(
+                "Failed to archive AI-generated questions for topic %s.",
+                topic_id,
+                exc_info=True,
+            )
+
     def _normalize_provider_payload(
         self,
         payload: Any,

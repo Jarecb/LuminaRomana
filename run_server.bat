@@ -14,7 +14,8 @@ rem Supported values include: gemini, google, copilot, openai.
 set "LUMINA_ROMANA_AI_ENABLED=true"
 set "LUMINA_ROMANA_AI_PROVIDER=gemini"
 set "LUMINA_ROMANA_AI_MODEL=gemini-2.5-flash"
-set "LUMINA_ROMANA_AI_API_KEY=AIzaSyC2mCeluucZqb1JtEV0rpVeZD36XjCpv88"
+rem Do NOT hardcode API keys in this file. Set LUMINA_ROMANA_AI_API_KEY in your environment instead.
+rem set "LUMINA_ROMANA_AI_API_KEY="
 
 set "PYTHON_EXE=python"
 if exist ".venv\Scripts\python.exe" (
@@ -27,29 +28,39 @@ if "%LUMINA_COMMAND%"=="" (
 )
 
 rem Check if offline was already passed via command line arguments
-set "LUMINA_OFFLINE_ONLY=false"
+set "LUMINA_ROMANA_AI_OFFLINE_ONLY=false"
 for %%A in (%LUMINA_COMMAND%) do (
-    if /I "%%~A"=="-o" set "LUMINA_OFFLINE_ONLY=true"
-    if /I "%%~A"=="-offline" set "LUMINA_OFFLINE_ONLY=true"
-    if /I "%%~A"=="--offline" set "LUMINA_OFFLINE_ONLY=true"
+    if /I "%%~A"=="-o" set "LUMINA_ROMANA_AI_OFFLINE_ONLY=true"
+    if /I "%%~A"=="-offline" set "LUMINA_ROMANA_AI_OFFLINE_ONLY=true"
+    if /I "%%~A"=="--offline" set "LUMINA_ROMANA_AI_OFFLINE_ONLY=true"
 )
 
 rem If not explicitly set to offline via args, ask the user
-if /I "%LUMINA_OFFLINE_ONLY%"=="false" (
+if /I "%LUMINA_ROMANA_AI_OFFLINE_ONLY%"=="false" (
     echo.
     echo ========================================
     echo  Select Execution Mode:
     echo  [1] Online - AI Enabled
     echo  [2] Offline - Local Only
+    echo  [3] Seed offline question bank - AI-assisted
     echo ========================================
-    choice /c 12 /n /m "Enter your choice (1 or 2): "
+    choice /c 123 /n /m "Enter your choice (1, 2 or 3): "
 
-    if errorlevel 2 (
-        set "LUMINA_OFFLINE_ONLY=true"
+    rem capture ERRORLEVEL because batch "if errorlevel" checks are >= comparisons
+    set "USER_CHOICE=%ERRORLEVEL%"
+    if "%USER_CHOICE%"=="3" (
+        set "LUMINA_COMMAND=seed-offline-questions"
+    ) else (
+        if "%USER_CHOICE%"=="2" (
+            set "LUMINA_ROMANA_AI_OFFLINE_ONLY=true"
+            set "LUMINA_COMMAND=serve"
+        ) else (
+            set "LUMINA_COMMAND=serve"
+        )
     )
 )
 
-if /I not "%LUMINA_OFFLINE_ONLY%"=="true" if /I "%LUMINA_ROMANA_AI_ENABLED%"=="true" if "%LUMINA_ROMANA_AI_API_KEY%"=="" (
+if /I not "%LUMINA_ROMANA_AI_OFFLINE_ONLY%"=="true" if /I "%LUMINA_ROMANA_AI_ENABLED%"=="true" if "%LUMINA_ROMANA_AI_API_KEY%"=="" (
     echo LUMINA_ROMANA_AI_API_KEY is empty in run_server.bat.
     echo Edit run_server.bat and set your Gemini or Copilot/OpenAI-compatible API key first.
     pause
@@ -57,7 +68,7 @@ if /I not "%LUMINA_OFFLINE_ONLY%"=="true" if /I "%LUMINA_ROMANA_AI_ENABLED%"=="t
 )
 
 set "LUMINA_MODE_LABEL=ai-enabled-or-fallback"
-if /I "%LUMINA_OFFLINE_ONLY%"=="true" (
+if /I "%LUMINA_ROMANA_AI_OFFLINE_ONLY%"=="true" (
     set "LUMINA_MODE_LABEL=offline-only"
 )
 
@@ -69,8 +80,10 @@ echo Data dir: %LUMINA_ROMANA_DATA_DIR%
 echo Mode:     %LUMINA_MODE_LABEL%
 echo Provider: %LUMINA_ROMANA_AI_PROVIDER%
 echo Model:    %LUMINA_ROMANA_AI_MODEL%
+rem echo API key:  %LUMINA_ROMANA_AI_API_KEY%
 echo Command:  %LUMINA_COMMAND%
 echo.
+rem echo NOTE: API key is displayed above. Avoid exposing this output in logs or shared terminals.
 
 "%PYTHON_EXE%" main.py %LUMINA_COMMAND%
 set "EXIT_CODE=%ERRORLEVEL%"

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import re
+import unicodedata
 import traceback
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -485,9 +486,36 @@ class LearningService:
 
     def build_wordbank(self, user_id: str = DEFAULT_USER_ID, query: str = "") -> WordbankData:
         self.get_or_create_user_progress(user_id)
+        entries = list(self.wordbank_repository.search_for_user(user_id, query=query))
+
+        # If AI is configured, enrich entries that lack concise translations.
+        try:
+            if self.ai_service and self.ai_service.is_configured:
+                # Find entries that only have the example-based definition or ambiguous defs
+                candidates: list[str] = []
+                for entry in entries:
+                    if entry.definition.strip().lower().startswith("seen in example:"):
+                        candidates.append(entry.word)
+                if candidates:
+                    glosses = self.ai_service.generate_glosses(candidates)
+                    for w, gloss in glosses.items():
+                        # Update DB for matching stored word (normalize key)
+                        norm = self._normalize_wordbank_text(w)
+                        if gloss:
+                            try:
+                                self.wordbank_repository.update_definition(user_id, norm, gloss)
+                            except Exception:
+                                # If repository doesn't support update or update fails, skip enrichment for this word
+                                pass
+                    # Re-read entries after enrichment
+                    entries = list(self.wordbank_repository.search_for_user(user_id, query=query))
+        except Exception:
+            # If AI enrichment fails, ignore and return current entries
+            pass
+
         return WordbankData(
             query=query,
-            entries=tuple(self.wordbank_repository.search_for_user(user_id, query=query)),
+            entries=tuple(entries),
         )
 
     def evaluate_placement(self, section_scores: Mapping[str, float]) -> PlacementOutcome:
@@ -776,14 +804,51 @@ class LearningService:
                 topic_id=topic_id,
             )
 
+    def _extract_lesson_translations(self, lesson: Lesson) -> dict[str, str]:
+        """Extract simple "X means Y" or "... meaning Y" glosses from lesson text and question explanations.
+
+        Returns mapping of normalized Romanian text -> English gloss (raw string).
+        """
+        translations: dict[str, str] = {}
+        pattern_means = re.compile(r"['\"](?P<r>[^'\"]+)['\"]\s+means\s+['\"](?P<e>[^'\"]+)['\"]", re.I)
+        pattern_meaning = re.compile(r"['\"](?P<r>[^'\"]+)['\"][^\n]{0,120}?meaning\s+['\"](?P<e>[^'\"]+)['\"]", re.I)
+        sources = [lesson.explanation_text or ""] + [q.explanation or "" for q in lesson.quiz_questions]
+        for src in sources:
+            if not src:
+                continue
+            for m in pattern_means.finditer(src):
+                r = self._normalize_wordbank_text(m.group("r"))
+                e = m.group("e").strip()
+                if r:
+                    translations.setdefault(r, e)
+            for m in pattern_meaning.finditer(src):
+                r = self._normalize_wordbank_text(m.group("r"))
+                e = m.group("e").strip()
+                if r:
+                    translations.setdefault(r, e)
+        return translations
+
     def _record_lesson_vocabulary(self, user_id: str, lesson: Lesson) -> None:
+        # Pre-extract inline glosses from lesson explanations and question explanations
+        translations = self._extract_lesson_translations(lesson)
         for sentence in lesson.example_sentences:
             context_definition = f"Seen in example: {sentence.english.strip()}"
             for token in self._extract_wordbank_tokens(sentence.romanian):
+                # Prefer an extracted translation/gloss when available.
+                normalized_token = self._normalize_wordbank_text(token)
+                definition = translations.get(normalized_token)
+                if not definition:
+                    # Try simple stemming heuristics to find a lemma match (strip common definite/article endings)
+                    for suffix in ("ul", "ului", "lor", "ii", "i", "a", "e", "le"):
+                        if normalized_token.endswith(suffix) and len(normalized_token) > len(suffix) + 1:
+                            stem = normalized_token[: -len(suffix)]
+                            if stem in translations:
+                                definition = translations[stem]
+                                break
                 self._upsert_wordbank_entry(
                     user_id=user_id,
                     word=token,
-                    definition=context_definition,
+                    definition=definition or context_definition,
                     topic_id=lesson.topic,
                 )
 
@@ -811,6 +876,14 @@ class LearningService:
     def _extract_wordbank_tokens(self, text: str) -> tuple[str, ...]:
         seen: set[str] = set()
         tokens: list[str] = []
+        if not text:
+            return tuple()
+        # Normalize Unicode forms (NFC) so combining marks and precomposed
+        # characters match the token regex consistently.
+        text = unicodedata.normalize("NFC", text)
+        # Replace common typographic apostrophes and dashes with ASCII
+        # equivalents so they are matched by the token pattern.
+        text = text.replace("’", "'").replace("‘", "'").replace("–", "-").replace("—", "-")
         for match in WORD_TOKEN_PATTERN.finditer(text):
             token = self._normalize_wordbank_text(match.group(0))
             if not token or token in seen:

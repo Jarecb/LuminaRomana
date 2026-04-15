@@ -70,6 +70,8 @@ class WordbankRepository(Protocol):
 
     def delete_for_user(self, user_id: str) -> None: ...
 
+    def update_definition(self, user_id: str, word: str, definition: str) -> None: ...
+
 
 class OfflineQuestionRepository(Protocol):
     def upsert_questions(

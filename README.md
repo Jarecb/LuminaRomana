@@ -174,7 +174,9 @@ Supported provider values:
 - `copilot` for GitHub Copilot or another OpenAI-compatible endpoint
 - `openai` for standard OpenAI-compatible chat completions
 
-### Gemini example
+### Provider examples and setting the API key
+
+#### Gemini example (PowerShell)
 
 ```powershell
 $env:LUMINA_ROMANA_AI_ENABLED = "true"
@@ -183,7 +185,7 @@ $env:LUMINA_ROMANA_AI_MODEL = "gemini-2.5-flash"
 $env:LUMINA_ROMANA_AI_API_KEY = "your-key"
 ```
 
-### Copilot/OpenAI-compatible example
+#### Copilot/OpenAI-compatible example (PowerShell)
 
 ```powershell
 $env:LUMINA_ROMANA_AI_ENABLED = "true"
@@ -192,6 +194,50 @@ $env:LUMINA_ROMANA_AI_MODEL = "gpt-4.1"
 $env:LUMINA_ROMANA_AI_API_KEY = "your-key"
 $env:LUMINA_ROMANA_AI_BASE_URL = "https://your-openai-compatible-endpoint/v1"
 ```
+
+Setting LUMINA_ROMANA_AI_API_KEY in your environment
+
+- Windows PowerShell (session only):
+
+```powershell
+$env:LUMINA_ROMANA_AI_API_KEY = "your-key"
+```
+
+- Windows cmd.exe (session only):
+
+```cmd
+set LUMINA_ROMANA_AI_API_KEY=your-key
+```
+
+- Windows persistent (PowerShell, per-user):
+
+```powershell
+setx LUMINA_ROMANA_AI_API_KEY "your-key"
+```
+
+- macOS / Linux (bash/zsh, session only):
+
+```bash
+export LUMINA_ROMANA_AI_API_KEY=your-key
+```
+
+- macOS / Linux persistent (add to your shell profile, e.g. ~/.bashrc or ~/.zshrc):
+
+```bash
+echo 'export LUMINA_ROMANA_AI_API_KEY=your-key' >> ~/.bashrc
+```
+
+Security note: Avoid committing API keys to source control. Prefer per-session environment variables or OS secret managers. Rotate keys if they are accidentally shared.
+
+Verification:
+
+```powershell
+python main.py status
+```
+
+Look for the AI provider configured line showing configured=True when the key and provider are set.
+
+<!-- Copilot/OpenAI example moved above -->
 
 Verification:
 
@@ -287,6 +333,14 @@ See `docs/DEPLOYMENT.md` for the full local, wheel, and container deployment flo
 - `plan.md`: staged delivery record
 - `spec.md`: product and test specification
 - `run_server.bat`: Windows startup script and AI config entrypoint
+
+## Recent changes (Apr 2026)
+
+- run_server.bat: added an interactive startup menu that includes an explicit "Seed offline question bank (AI-assisted)" option (choose [3]) and still accepts direct CLI args (e.g. .\run_server.bat seed-offline-questions). The script no longer contains a hard-coded API key; set LUMINA_ROMANA_AI_API_KEY in your environment instead. The batch file also echoes the configured API key at startup with a warning — avoid sharing logs. Consider masking it if needed.
+
+- Wordbank improvements: example-sentence tokens are now normalized for Unicode and common typographic punctuation; search is diacritic-insensitive (so "gradina" matches "grădină"). The app will prefer concise translations when available: lesson glosses are extracted from explanations and, when AI is enabled, the AIService can request concise English glosses and update wordbank entries automatically.
+
+- Storage and API: wordbank upsert now updates existing entries (definitions can be refreshed). AIService gained generate_glosses(words) to return JSON mappings for enrichment. Enrichment runs only when an AI provider is configured and is best-effort (failures are ignored to avoid breaking the UI).
 
 ## Current Status
 Implemented:

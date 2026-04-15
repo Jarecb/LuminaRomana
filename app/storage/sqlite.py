@@ -693,7 +693,10 @@ class SQLiteWordbankRepository:
                 """
                 INSERT INTO wordbank (user_id, word, definition, topic, first_seen_at)
                 VALUES (?, ?, ?, ?, ?)
-                ON CONFLICT(user_id, word) DO NOTHING
+                ON CONFLICT(user_id, word) DO UPDATE SET
+                    definition = excluded.definition,
+                    topic = excluded.topic,
+                    first_seen_at = excluded.first_seen_at
                 """,
                 (
                     entry.user_id,
@@ -704,21 +707,55 @@ class SQLiteWordbankRepository:
                 ),
             )
 
+    def update_definition(self, user_id: str, word: str, definition: str) -> None:
+        """Update the definition for an existing wordbank entry for the user."""
+        with self.storage.connection() as conn:
+            conn.execute(
+                """
+                UPDATE wordbank
+                SET definition = ?, first_seen_at = ?
+                WHERE user_id = ? AND word = ?
+                """,
+                (definition, _serialize_datetime(datetime.now()), user_id, word),
+            )
+
     def search_for_user(self, user_id: str, query: str = "", limit: int = 100) -> list[WordbankEntry]:
         with self.storage.connection() as conn:
             if query.strip():
-                pattern = f"%{query.strip().lower()}%"
-                rows = conn.execute(
-                    """
+                raw = query.strip().lower()
+                pattern = f"%{raw}%"
+
+                # Build a folded (ASCII) form of lower(word)/definition for diacritic-insensitive matching
+                # Using nested REPLACE calls so SQLite can compare folded forms without changing schema.
+                def folded_expr(col_name: str) -> str:
+                    expr = f"lower({col_name})"
+                    replacements = [
+                        ("ă", "a"), ("â", "a"), ("î", "i"), ("ș", "s"), ("ş", "s"), ("ț", "t"), ("ţ", "t"),
+                        ("Ă", "a"), ("Â", "a"), ("Î", "i"), ("Ș", "s"), ("Ş", "s"), ("Ț", "t"), ("Ţ", "t"),
+                    ]
+                    for a, b in replacements:
+                        expr = f"REPLACE({expr}, '{a}', '{b}')"
+                    return expr
+
+                folded_pattern = raw
+                # Fold the query on the Python side too so ASCII-only searches match folded data
+                for a, b in [("ă", "a"), ("â", "a"), ("î", "i"), ("ș", "s"), ("ş", "s"), ("ț", "t"), ("ţ", "t")]:
+                    folded_pattern = folded_pattern.replace(a, b)
+                folded_pattern = f"%{folded_pattern}%"
+
+                sql = f"""
                     SELECT *
                     FROM wordbank
                     WHERE user_id = ?
-                      AND (lower(word) LIKE ? OR lower(definition) LIKE ? OR lower(topic) LIKE ?)
+                      AND (
+                        lower(word) LIKE ? OR lower(definition) LIKE ? OR lower(topic) LIKE ?
+                        OR {folded_expr('word')} LIKE ? OR {folded_expr('definition')} LIKE ?
+                      )
                     ORDER BY word ASC
                     LIMIT ?
-                    """,
-                    (user_id, pattern, pattern, pattern, limit),
-                ).fetchall()
+                    """
+
+                rows = conn.execute(sql, (user_id, pattern, pattern, pattern, folded_pattern, folded_pattern, limit)).fetchall()
             else:
                 rows = conn.execute(
                     """
