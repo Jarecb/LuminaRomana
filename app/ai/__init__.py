@@ -1,3 +1,4 @@
+"""AI package public surface (service, providers, and types)."""
 from __future__ import annotations
 
 # Import from the service module

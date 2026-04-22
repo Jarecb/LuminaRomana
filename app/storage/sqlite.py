@@ -1,3 +1,8 @@
+"""SQLite-backed storage layer and repository implementations.
+
+Provides SQLiteStorage and repository classes that serialize domain models to JSON
+and persist them into a local SQLite database used by the application.
+"""
 from __future__ import annotations
 
 from contextlib import contextmanager
@@ -10,7 +15,7 @@ import sqlite3
 from collections.abc import Sequence
 from typing import Iterator
 
-from app.models import CEFRBand, ExampleSentence, Lesson, Question, QuestionType, QuizAttempt, UserProgress, WordbankEntry
+from app.models import CEFRBand, ExampleSentence, Lesson, Question, QuestionType, QuizAttempt, UserProgress, WordbankEntry, VerbbankEntry
 
 
 def _serialize_datetime(value: datetime | None) -> str | None:
@@ -254,6 +259,17 @@ class SQLiteStorage:
                     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
                 );
 
+                CREATE TABLE IF NOT EXISTS verbbank (
+                    user_id TEXT NOT NULL,
+                    verb TEXT NOT NULL,
+                    conjugations TEXT NOT NULL,
+                    translation TEXT NOT NULL DEFAULT '',
+                    topic TEXT NOT NULL,
+                    first_seen_at TEXT NOT NULL,
+                    PRIMARY KEY (user_id, verb),
+                    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+                );
+
                 CREATE TABLE IF NOT EXISTS offline_question_bank (
                     fingerprint TEXT PRIMARY KEY,
                     topic TEXT NOT NULL,
@@ -274,6 +290,13 @@ class SQLiteStorage:
                 );
                 """
             )
+            self._ensure_column(conn, "verbbank", "translation", "TEXT NOT NULL DEFAULT ''")
+
+    def _ensure_column(self, conn: sqlite3.Connection, table_name: str, column_name: str, column_sql: str) -> None:
+        columns = {row[1] for row in conn.execute(f"PRAGMA table_info({table_name})")}
+        if column_name in columns:
+            return
+        conn.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_sql}")
 
     @contextmanager
     def connection(self) -> Iterator[sqlite3.Connection]:
@@ -781,6 +804,105 @@ class SQLiteWordbankRepository:
     def delete_for_user(self, user_id: str) -> None:
         with self.storage.connection() as conn:
             conn.execute("DELETE FROM wordbank WHERE user_id = ?", (user_id,))
+
+
+@dataclass(slots=True)
+class SQLiteVerbbankRepository:
+    storage: SQLiteStorage
+
+    def upsert(self, entry: VerbbankEntry) -> None:
+        with self.storage.connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO verbbank (user_id, verb, conjugations, translation, topic, first_seen_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(user_id, verb) DO UPDATE SET
+                    conjugations = excluded.conjugations,
+                    translation = excluded.translation,
+                    topic = excluded.topic,
+                    first_seen_at = excluded.first_seen_at
+                """,
+                (
+                    entry.user_id,
+                    entry.verb,
+                    entry.conjugations,
+                    entry.translation,
+                    entry.topic,
+                    _serialize_datetime(entry.first_seen_at),
+                ),
+            )
+
+    def update_conjugations(self, user_id: str, verb: str, conjugations: str) -> None:
+        with self.storage.connection() as conn:
+            conn.execute(
+                """
+                UPDATE verbbank
+                SET conjugations = ?, first_seen_at = ?
+                WHERE user_id = ? AND verb = ?
+                """,
+                (conjugations, _serialize_datetime(datetime.now()), user_id, verb),
+            )
+
+    def search_for_user(self, user_id: str, query: str = "", limit: int = 100) -> list[VerbbankEntry]:
+        with self.storage.connection() as conn:
+            if query.strip():
+                raw = query.strip().lower()
+                pattern = f"%{raw}%"
+
+                def folded_expr(col_name: str) -> str:
+                    expr = f"lower({col_name})"
+                    replacements = [
+                        ("ă", "a"), ("â", "a"), ("î", "i"), ("ș", "s"), ("ş", "s"), ("ț", "t"), ("ţ", "t"),
+                        ("Ă", "a"), ("Â", "a"), ("Î", "i"), ("Ș", "s"), ("Ş", "s"), ("Ț", "t"), ("Ţ", "t"),
+                    ]
+                    for a, b in replacements:
+                        expr = f"REPLACE({expr}, '{a}', '{b}')"
+                    return expr
+
+                folded_pattern = raw
+                for a, b in [("ă", "a"), ("â", "a"), ("î", "i"), ("ș", "s"), ("ş", "s"), ("ț", "t"), ("ţ", "t")]:
+                    folded_pattern = folded_pattern.replace(a, b)
+                folded_pattern = f"%{folded_pattern}%"
+
+                sql = f"""
+                    SELECT *
+                    FROM verbbank
+                    WHERE user_id = ?
+                      AND (
+                        lower(verb) LIKE ? OR lower(conjugations) LIKE ? OR lower(translation) LIKE ? OR lower(topic) LIKE ?
+                        OR {folded_expr('verb')} LIKE ? OR {folded_expr('conjugations')} LIKE ? OR {folded_expr('translation')} LIKE ?
+                      )
+                    ORDER BY verb ASC
+                    LIMIT ?
+                    """
+
+                rows = conn.execute(sql, (user_id, pattern, pattern, pattern, pattern, folded_pattern, folded_pattern, folded_pattern, limit)).fetchall()
+            else:
+                rows = conn.execute(
+                    """
+                    SELECT *
+                    FROM verbbank
+                    WHERE user_id = ?
+                    ORDER BY verb ASC
+                    LIMIT ?
+                    """,
+                    (user_id, limit),
+                ).fetchall()
+        return [
+            VerbbankEntry(
+                user_id=row["user_id"],
+                verb=row["verb"],
+                conjugations=row["conjugations"],
+                translation=(row["translation"] if "translation" in row.keys() else ""),
+                topic=row["topic"],
+                first_seen_at=_deserialize_datetime(row["first_seen_at"]) or datetime.now(),
+            )
+            for row in rows
+        ]
+
+    def delete_for_user(self, user_id: str) -> None:
+        with self.storage.connection() as conn:
+            conn.execute("DELETE FROM verbbank WHERE user_id = ?", (user_id,))
 
 
 @dataclass(slots=True)

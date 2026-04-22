@@ -173,6 +173,24 @@ def test_seed_offline_questions_defaults_to_100_per_topic(capsys, monkeypatch, t
     assert "requested minimum was 100" in captured.out
 
 
+def test_seed_alias_runs_seed_offline_questions(capsys, monkeypatch, tmp_path):
+    data_dir = tmp_path / "data"
+    monkeypatch.setenv("LUMINA_ROMANA_ENV", "test")
+    monkeypatch.setenv("LUMINA_ROMANA_DATA_DIR", str(data_dir))
+
+    exit_code = main(["seed", "--topics", "romanian_basics", "--question-count", "10"])
+    captured = capsys.readouterr()
+
+    storage = SQLiteStorage(data_dir / "lumina_romana.db")
+    storage.initialize()
+    offline_repository = SQLiteOfflineQuestionRepository(storage)
+
+    assert exit_code == 0
+    assert "Lumina Romana offline question bank seed" in captured.out
+    assert "- romanian_basics:" in captured.out
+    assert offline_repository.count_for_topic("romanian_basics") >= 1
+
+
 def test_serve_offline_flag_starts_server_in_offline_only_mode(monkeypatch, tmp_path):
     monkeypatch.setenv("LUMINA_ROMANA_ENV", "test")
     monkeypatch.setenv("LUMINA_ROMANA_DATA_DIR", str(tmp_path / "data"))

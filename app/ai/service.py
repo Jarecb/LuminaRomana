@@ -1,3 +1,8 @@
+"""High-level AI orchestration and helper utilities.
+
+Coordinates prompt construction, provider selection, retries, fallback to local
+content, and metrics for AI-driven lesson, gloss, and conjugation generation.
+"""
 from __future__ import annotations
 
 import json
@@ -335,21 +340,62 @@ class AIService:
             self.logger.exception("generate_glosses failed")
         return result
 
-        if self.offline_question_repository is None:
-            return
+    def generate_conjugations(self, verbs: Sequence[str]) -> dict[str, Any]:
+        """Request conjugations from AI provider and return a mapping verb -> conjugations string.
+
+        Returns an empty dict if AI is not configured or on failure.
+        """
+        result: dict[str, Any] = {}
         try:
-            self.offline_question_repository.upsert_questions(
-                topic_id,
-                lesson.quiz_questions,
-                provider_name=provider_name,
-                model=model,
+            if not self.providers or not verbs:
+                return result
+            seen: set[str] = set()
+            unique: list[str] = []
+            for v in verbs:
+                if v in seen:
+                    continue
+                seen.add(v)
+                unique.append(v)
+
+            system = (
+                "You are a Romanian conjugation assistant. Return valid JSON only. "
+                "Map each input Romanian verb or conjugated form to an object with these keys: "
+                "'infinitive', 'present', 'past', 'future', 'participle', 'gerund'. "
+                "'present', 'past', and 'future' must each be objects containing 'eu' and 'el/ea'. "
+                "If the input is a conjugated form such as 'vad', infer the lemma correctly."
             )
+            user_lines = ["Provide conjugations for the following Romanian verbs:"]
+            for v in unique:
+                user_lines.append(f"- {v}")
+            user_lines.append(
+                "Respond with compact Romanian forms, for example: "
+                '{"vad":{"infinitive":"a vedea","present":{"eu":"vad","el/ea":"vede"},'
+                '"past":{"eu":"am vazut","el/ea":"a vazut"},"future":{"eu":"voi vedea","el/ea":"va vedea"},'
+                '"participle":"vazut","gerund":"vazand"}}'
+            )
+            user_msg = "\n".join(user_lines)
+
+            from app.ai.types import AIMessage
+
+            messages = (AIMessage(role="system", content=system), AIMessage(role="user", content=user_msg))
+            response = self.provider.generate_json(messages, temperature=0.0)
+            parsed = json.loads(response.content)
+            if isinstance(parsed, dict):
+                for k, v in parsed.items():
+                    if not isinstance(k, str):
+                        continue
+                    key = k.strip()
+                    # Accept either a simple string value or a nested object describing tenses.
+                    if isinstance(v, str):
+                        result[key] = v.strip()
+                    elif isinstance(v, dict):
+                        result[key] = v
+                    else:
+                        result[key] = str(v)
         except Exception:
-            self.logger.warning(
-                "Failed to archive AI-generated questions for topic %s.",
-                topic_id,
-                exc_info=True,
-            )
+            self.logger.exception("generate_conjugations failed")
+        return result
+
 
     def _normalize_provider_payload(
         self,

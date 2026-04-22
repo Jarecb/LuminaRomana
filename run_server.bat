@@ -15,7 +15,7 @@ set "LUMINA_ROMANA_AI_ENABLED=true"
 set "LUMINA_ROMANA_AI_PROVIDER=gemini"
 set "LUMINA_ROMANA_AI_MODEL=gemini-2.5-flash"
 rem Do NOT hardcode API keys in this file. Set LUMINA_ROMANA_AI_API_KEY in your environment instead.
-rem set "LUMINA_ROMANA_AI_API_KEY="
+set "LUMINA_ROMANA_AI_API_KEY=AIzaSyC2mCeluucZqb1JtEV0rpVeZD36XjCpv88"
 
 set "PYTHON_EXE=python"
 if exist ".venv\Scripts\python.exe" (
@@ -23,8 +23,11 @@ if exist ".venv\Scripts\python.exe" (
 )
 
 set "LUMINA_COMMAND=%*"
+set "LUMINA_HAS_ARGS=true"
+set "LUMINA_INTERACTIVE_MENU_CHOICE="
 if "%LUMINA_COMMAND%"=="" (
     set "LUMINA_COMMAND=serve"
+    set "LUMINA_HAS_ARGS=false"
 )
 
 rem Check if offline was already passed via command line arguments
@@ -35,8 +38,8 @@ for %%A in (%LUMINA_COMMAND%) do (
     if /I "%%~A"=="--offline" set "LUMINA_ROMANA_AI_OFFLINE_ONLY=true"
 )
 
-rem If not explicitly set to offline via args, ask the user
-if /I "%LUMINA_ROMANA_AI_OFFLINE_ONLY%"=="false" (
+rem Only prompt for startup mode when no explicit command-line args were supplied.
+if /I "%LUMINA_HAS_ARGS%"=="false" if /I "%LUMINA_ROMANA_AI_OFFLINE_ONLY%"=="false" (
     echo.
     echo ========================================
     echo  Select Execution Mode:
@@ -48,6 +51,7 @@ if /I "%LUMINA_ROMANA_AI_OFFLINE_ONLY%"=="false" (
 
     rem capture ERRORLEVEL because batch "if errorlevel" checks are >= comparisons
     set "USER_CHOICE=%ERRORLEVEL%"
+    set "LUMINA_INTERACTIVE_MENU_CHOICE=%USER_CHOICE%"
     if "%USER_CHOICE%"=="3" (
         set "LUMINA_COMMAND=seed-offline-questions"
     ) else (
@@ -85,11 +89,22 @@ echo Command:  %LUMINA_COMMAND%
 echo.
 rem echo NOTE: API key is displayed above. Avoid exposing this output in logs or shared terminals.
 
+if "%LUMINA_INTERACTIVE_MENU_CHOICE%"=="3" (
+    echo Seeding the offline question bank. Review the summary below when it completes.
+    echo.
+)
+
 "%PYTHON_EXE%" main.py %LUMINA_COMMAND%
 set "EXIT_CODE=%ERRORLEVEL%"
 
 if not "%EXIT_CODE%"=="0" (
     echo Server exited with code %EXIT_CODE%.
+    pause
+)
+
+if "%EXIT_CODE%"=="0" if /I "%LUMINA_HAS_ARGS%"=="false" if /I not "%LUMINA_COMMAND%"=="serve" (
+    echo.
+    echo Command completed successfully. Review the output above.
     pause
 )
 

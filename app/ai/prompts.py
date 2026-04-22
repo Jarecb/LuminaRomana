@@ -1,3 +1,9 @@
+"""Prompt construction utilities for AI lesson generation.
+
+Defines SystemPromptBuilder, LessonPromptBuilder, and PromptBuilder to assemble
+system and user messages used when requesting JSON-formatted lessons from AI
+providers.
+"""
 from __future__ import annotations
 
 from dataclasses import dataclass, field

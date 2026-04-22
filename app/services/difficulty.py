@@ -1,3 +1,8 @@
+"""Adaptive difficulty manager and prompt constraint builder.
+
+Encapsulates logic to assess recent performance, recommend next difficulty, and
+produce prompt constraints used when generating or selecting lesson content.
+"""
 from __future__ import annotations
 
 from collections import Counter

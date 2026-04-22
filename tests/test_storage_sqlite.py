@@ -1,12 +1,15 @@
 from pathlib import Path
 
-from app.models import CEFRBand, ExampleSentence, Lesson, Question, QuestionType, QuizAttempt, UserProgress, WordbankEntry
+import sqlite3
+
+from app.models import CEFRBand, ExampleSentence, Lesson, Question, QuestionType, QuizAttempt, UserProgress, WordbankEntry, VerbbankEntry
 from app.storage import (
     SQLiteLessonRepository,
     SQLiteQuizAttemptRepository,
     SQLiteStorage,
     SQLiteUserProgressRepository,
     SQLiteWordbankRepository,
+    SQLiteVerbbankRepository,
 )
 
 
@@ -132,6 +135,58 @@ def test_wordbank_entries_are_stored_and_searchable(tmp_path):
 
     assert [entry.word for entry in all_entries] == ["baiatul", "cadoul"]
     assert [entry.word for entry in filtered_entries] == ["cadoul"]
+
+    # Verbbank storage test
+    verbbank_repository = SQLiteVerbbankRepository(storage)
+    verbbank_repository.upsert(
+        VerbbankEntry(
+            user_id="learner-1",
+            verb="este",
+            conjugations='{"infinitive":"a fi","present":{"eu":"sunt","tu":"esti","el/ea":"este"}}',
+            topic="nouns_and_articles",
+        )
+    )
+    # also store a verb with an explicit translation
+    verbbank_repository.upsert(
+        VerbbankEntry(
+            user_id="learner-1",
+            verb="merge",
+            conjugations='{}',
+            translation="to go",
+            topic="nouns_and_articles",
+        )
+    )
+    all_v = verbbank_repository.search_for_user("learner-1")
+    filtered_v = verbbank_repository.search_for_user("learner-1", query="sunt")
+    filtered_merge = verbbank_repository.search_for_user("learner-1", query="merge")
+    assert [entry.verb for entry in all_v] == ["este", "merge"]
+    assert [entry.verb for entry in filtered_v] == ["este"]
+    assert filtered_merge[0].translation == "to go"
+
+
+def test_initialize_migrates_legacy_verbbank_table(tmp_path):
+    db_path = tmp_path / "legacy.db"
+    with sqlite3.connect(db_path) as conn:
+        conn.executescript(
+            """
+            CREATE TABLE verbbank (
+                user_id TEXT NOT NULL,
+                verb TEXT NOT NULL,
+                conjugations TEXT NOT NULL,
+                topic TEXT NOT NULL,
+                first_seen_at TEXT NOT NULL,
+                PRIMARY KEY (user_id, verb)
+            );
+            """
+        )
+
+    storage = SQLiteStorage(db_path)
+    storage.initialize()
+
+    with sqlite3.connect(db_path) as conn:
+        columns = [row[1] for row in conn.execute("PRAGMA table_info(verbbank)")]
+
+    assert "translation" in columns
 
 
 def test_pending_incorrect_questions_persist_until_answered_correctly(tmp_path):

@@ -1,3 +1,8 @@
+"""Application configuration and environment helpers for Lumina Romana.
+
+Defines dataclasses for AI, web, and overall application settings, and includes
+helpers to load defaults from environment variables.
+"""
 from __future__ import annotations
 
 from dataclasses import dataclass, field

@@ -1,5 +1,11 @@
+"""Web UI WSGI application and rendering helpers.
+
+Contains the lightweight WSGI application used for the browser-based learner
+interface and helper rendering utilities for lesson pages and progress views.
+"""
 from __future__ import annotations
 
+import json
 import traceback
 from dataclasses import dataclass
 from html import escape
@@ -64,6 +70,9 @@ class WebApp:
             elif method == "GET" and path == "/wordbank":
                 query = parse_qs(environ.get("QUERY_STRING", "")).get("q", [""])[-1]
                 response = self._html_response(self._render_wordbank(query))
+            elif method == "GET" and path == "/verbbank":
+                query = parse_qs(environ.get("QUERY_STRING", "")).get("q", [""])[-1]
+                response = self._html_response(self._render_verbbank(query))
             elif method == "GET" and path == "/progress":
                 response = self._html_response(self._render_progress())
             elif method == "POST" and path == "/progress/revisit":
@@ -146,6 +155,7 @@ class WebApp:
                 f"still need a later correct answer before this level can advance.</p>"
             )
         wordbank_link = f"<a class='secondary' href='/wordbank'>Wordbank ({dashboard.wordbank_size})</a>"
+        verbbank_link = f"<a class='secondary' href='/verbbank'>Verbbank ({dashboard.verbbank_size})</a>"
         lessons_html = "".join(
             f"<li><a href='/lessons/{escape(lesson.lesson_id)}'>{escape(lesson.topic)}</a> "
             f"<span>Level {lesson.level} / {lesson.cefr_band.value} / difficulty {lesson.difficulty}</span></li>"
@@ -175,7 +185,7 @@ class WebApp:
                 <form method="post" action="/sessions/start">
                   <button type="submit">Start or resume session</button>
                   <a class="secondary" href="/progress">View progress</a>
-                  {wordbank_link}
+                  {wordbank_link} {verbbank_link}
                 </form>
                 {active_lesson}
               </div>
@@ -257,6 +267,7 @@ class WebApp:
                   <button type="submit">Start question set</button>
                   <a class="secondary" href="/levels/{escape(revision.topic.topic_id)}">Back to level overview</a>
                   <a class="secondary" href="/wordbank">Wordbank</a>
+                  <a class="secondary" href="/verbbank">Verbbank</a>
                 </form>
               </div>
             </section>
@@ -298,6 +309,120 @@ class WebApp:
             </section>
             """,
         )
+
+    def _render_verbbank(self, query: str) -> str:
+        verbbank = self.learning_service.build_verbbank(DEFAULT_USER_ID, query=query)
+        entries_html = "".join(
+            self._render_verbbank_entry(entry)
+            for entry in verbbank.entries
+        ) or "<li>No matching verbbank entries yet.</li>"
+        return self._page(
+            "Verbbank",
+            f"""
+            <section class="hero">
+              <div>
+                <p class="eyebrow">Learner verbbank</p>
+                <h1>Saved verbs</h1>
+                <p>Verbs encountered in lessons are stored here with English glosses and core tense forms when available.</p>
+                <form method="get" action="/verbbank">
+                  <label><span>Search</span><input type="text" name="q" value="{escape(verbbank.query)}"></label>
+                  <button type="submit">Search</button>
+                  <a class="secondary" href="/">Back to dashboard</a>
+                </form>
+              </div>
+            </section>
+            <section class="panel">
+              <h2>Verbbank entries</h2>
+              <ul class="wordbank">{entries_html}</ul>
+            </section>
+            """,
+        )
+
+    def _render_verbbank_entry(self, entry) -> str:
+        details = self._parse_verbbank_details(entry.conjugations)
+        lines: list[str] = []
+
+        translation = entry.translation.strip() or "English gloss unavailable."
+        lines.append(f"<span class='translation'>{escape(translation)}</span>")
+
+        core_parts: list[str] = []
+        infinitive = str(details.get("infinitive", "")).strip()
+        if infinitive:
+            core_parts.append(infinitive)
+        present = details.get("present")
+        if isinstance(present, dict):
+            if present.get("eu"):
+                core_parts.append(f"eu {present['eu']}")
+            if present.get("el/ea"):
+                core_parts.append(f"el/ea {present['el/ea']}")
+        if details.get("participle"):
+            core_parts.append(str(details["participle"]))
+        if details.get("gerund"):
+            core_parts.append(str(details["gerund"]))
+        if core_parts:
+            if len(core_parts) == 1:
+                core_summary = core_parts[0]
+            else:
+                core_summary = f"{core_parts[0]} ({', '.join(core_parts[1:])})"
+            lines.append(f"<span>Core forms: {escape(core_summary)}</span>")
+
+        for label, tense_key in (("Past", "past"), ("Future", "future")):
+            tense = details.get(tense_key)
+            if not isinstance(tense, dict):
+                continue
+            tense_parts: list[str] = []
+            if tense.get("eu"):
+                tense_parts.append(f"eu {tense['eu']}")
+            if tense.get("el/ea"):
+                tense_parts.append(f"el/ea {tense['el/ea']}")
+            if tense_parts:
+                lines.append(f"<span>{escape(label)}: {escape('; '.join(tense_parts))}</span>")
+
+        if len(lines) == 1 and entry.conjugations.strip():
+            lines.append(f"<span>{escape(entry.conjugations.strip().strip('\"'))}</span>")
+
+        lines.append(f"<em>{escape(entry.topic.replace('_', ' '))}</em>")
+        return f"<li><strong>{escape(entry.verb)}</strong>{''.join(lines)}</li>"
+
+    def _parse_verbbank_details(self, conjugations: str) -> dict[str, object]:
+        stripped = conjugations.strip()
+        if not stripped:
+            return {}
+        try:
+            payload = json.loads(stripped)
+        except json.JSONDecodeError:
+            payload = stripped.strip('"')
+
+        if isinstance(payload, str):
+            match = payload.split("(", 1)
+            if len(match) != 2 or not match[1].endswith(")"):
+                return {}
+            present: dict[str, str] = {}
+            participle = ""
+            gerund = ""
+            for part in (item.strip() for item in match[1][:-1].split(",")):
+                if not part:
+                    continue
+                if part.startswith("eu "):
+                    present["eu"] = part.removeprefix("eu ").strip()
+                elif part.startswith("el/ea "):
+                    present["el/ea"] = part.removeprefix("el/ea ").strip()
+                elif not gerund and part.endswith("nd"):
+                    gerund = part
+                elif not participle:
+                    participle = part
+            details: dict[str, object] = {"infinitive": match[0].strip()}
+            if present:
+                details["present"] = present
+            if participle:
+                details["participle"] = participle
+            if gerund:
+                details["gerund"] = gerund
+            return details
+
+        if isinstance(payload, dict):
+            return payload
+        return {}
 
     def _render_lesson(self, lesson_id: str) -> str:
         lesson = self.learning_service.lesson_repository.get(lesson_id)

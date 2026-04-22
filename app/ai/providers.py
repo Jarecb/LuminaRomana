@@ -1,3 +1,8 @@
+"""AI provider implementations (OpenAI/Gemini wrappers and disabled provider).
+
+Provides BaseAIProvider abstract base class and concrete adapters that translate
+application prompt packages to provider API calls and normalize responses.
+"""
 from __future__ import annotations
 
 from abc import ABC, abstractmethod

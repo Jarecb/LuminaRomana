@@ -1,3 +1,8 @@
+"""Content validation utilities and schema checks for AI-generated lessons.
+
+Implements structured validation rules and helpful error messages used to ensure
+AI-generated lesson payloads are safe, on-topic, and complete before ingestion.
+"""
 from __future__ import annotations
 
 import re

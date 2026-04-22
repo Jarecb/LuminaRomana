@@ -1,9 +1,14 @@
+"""Storage interface protocols defining repository contracts.
+
+Abstract repository Protocols used by the application so different storage backends
+may be implemented without changing service logic.
+"""
 from __future__ import annotations
 
 from collections.abc import Sequence
 from typing import Protocol
 
-from app.models import Lesson, Question, QuizAttempt, UserProgress, WordbankEntry
+from app.models import Lesson, Question, QuizAttempt, UserProgress, WordbankEntry, VerbbankEntry
 
 
 class UserProgressRepository(Protocol):
@@ -71,6 +76,16 @@ class WordbankRepository(Protocol):
     def delete_for_user(self, user_id: str) -> None: ...
 
     def update_definition(self, user_id: str, word: str, definition: str) -> None: ...
+
+
+class VerbbankRepository(Protocol):
+    def upsert(self, entry: VerbbankEntry) -> None: ...
+
+    def search_for_user(self, user_id: str, query: str = "", limit: int = 100) -> list[VerbbankEntry]: ...
+
+    def delete_for_user(self, user_id: str) -> None: ...
+
+    def update_conjugations(self, user_id: str, verb: str, conjugations: str) -> None: ...
 
 
 class OfflineQuestionRepository(Protocol):

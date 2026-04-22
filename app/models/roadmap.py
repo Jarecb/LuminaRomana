@@ -1,3 +1,8 @@
+"""Roadmap metadata and placement test blueprints.
+
+Holds TopicMetadata and PlacementTestSection dataclasses and the canonical roadmap
+and placement-test blueprints used by the learning content library.
+"""
 from __future__ import annotations
 
 from dataclasses import dataclass

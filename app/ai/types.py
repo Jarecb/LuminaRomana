@@ -1,3 +1,8 @@
+"""AI-related data types and exceptions used across the AI package.
+
+Defines request/result dataclasses, message and prompt container types, and
+specialized AI integration exceptions for control flow and error handling.
+"""
 from __future__ import annotations
 
 from dataclasses import dataclass, field

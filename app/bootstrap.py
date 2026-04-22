@@ -1,3 +1,8 @@
+"""Application bootstrap and dependency wiring.
+
+Creates the Settings, storage layer, repositories, services, and AI provider wiring
+used to instantiate the running application object.
+"""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -15,6 +20,7 @@ from app.storage import (
     SQLiteStorage,
     SQLiteUserProgressRepository,
     SQLiteWordbankRepository,
+    SQLiteVerbbankRepository,
 )
 from app.validation import ContentValidator
 
@@ -27,6 +33,7 @@ class Persistence:
     offline_questions: SQLiteOfflineQuestionRepository
     quiz_attempts: SQLiteQuizAttemptRepository
     wordbank: SQLiteWordbankRepository
+    verbbank: SQLiteVerbbankRepository
 
 
 @dataclass(slots=True)
@@ -57,6 +64,7 @@ def create_application(*, offline_only: bool = False) -> Application:
         offline_questions=SQLiteOfflineQuestionRepository(storage),
         quiz_attempts=SQLiteQuizAttemptRepository(storage),
         wordbank=SQLiteWordbankRepository(storage),
+        verbbank=SQLiteVerbbankRepository(storage),
     )
 
     content_library = ContentLibrary(offline_question_repository=persistence.offline_questions)
@@ -81,6 +89,7 @@ def create_application(*, offline_only: bool = False) -> Application:
         lesson_repository=persistence.lessons,
         quiz_attempt_repository=persistence.quiz_attempts,
         wordbank_repository=persistence.wordbank,
+        verbbank_repository=persistence.verbbank,
         content_library=content_library,
         difficulty_manager=difficulty_manager,
         ai_service=ai_service,

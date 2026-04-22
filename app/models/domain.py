@@ -1,3 +1,8 @@
+"""Core domain models and simple validation for learner state and questions.
+
+Defines dataclasses for questions, lessons, quiz attempts, vocabulary entries, and
+user progress with lightweight validation performed in __post_init__ hooks.
+"""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -108,6 +113,24 @@ class WordbankEntry:
             raise ValueError("Wordbank entries require a definition.")
         if not self.topic.strip():
             raise ValueError("Wordbank entries require a topic.")
+
+
+@dataclass(slots=True)
+class VerbbankEntry:
+    user_id: str
+    verb: str
+    conjugations: str
+    topic: str
+    translation: str = ""
+    first_seen_at: datetime = field(default_factory=utc_now)
+
+    def __post_init__(self) -> None:
+        if not self.verb.strip():
+            raise ValueError("Verbbank entries require a verb.")
+        if not self.conjugations.strip():
+            raise ValueError("Verbbank entries require conjugations.")
+        if not self.topic.strip():
+            raise ValueError("Verbbank entries require a topic.")
 
 
 @dataclass(slots=True)

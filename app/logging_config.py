@@ -1,3 +1,8 @@
+"""Logging configuration helpers for Lumina Romana.
+
+Provides a simple configure_logging function used during application startup to
+set format and level.
+"""
 from __future__ import annotations
 
 import logging

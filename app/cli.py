@@ -1,3 +1,8 @@
+"""Command-line interface for Lumina Romana.
+
+Implements the top-level CLI commands (serve, status, seeding, sampling, and testing
+helpers) and argument parsing used by the console entrypoint.
+"""
 from __future__ import annotations
 
 from collections.abc import Sequence
@@ -18,12 +23,17 @@ CEFR_TO_LEVEL = {
 
 DEFAULT_OFFLINE_QUESTION_TARGET = 100
 OFFLINE_SERVER_SWITCHES = {"-o", "-offline", "--offline"}
+COMMAND_ALIASES = {
+    "seed": "seed-offline-questions",
+}
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     raw_args = list(argv) if argv is not None else sys.argv[1:]
     if raw_args and raw_args[0] in OFFLINE_SERVER_SWITCHES:
         raw_args = ["serve", *raw_args]
+    if raw_args and raw_args[0] in COMMAND_ALIASES:
+        raw_args[0] = COMMAND_ALIASES[raw_args[0]]
 
     parser = argparse.ArgumentParser(prog="lumina-romana")
     subcommands = parser.add_subparsers(dest="command")

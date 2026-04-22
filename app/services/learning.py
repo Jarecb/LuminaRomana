@@ -1,5 +1,11 @@
+"""Learning service: orchestration of lesson flow and user progress.
+
+Central service responsible for starting lessons, handling quiz attempts, and
+tracking learner progress and mastery interactions.
+"""
 from __future__ import annotations
 
+import json
 import logging
 import re
 import unicodedata
@@ -11,8 +17,8 @@ from uuid import uuid4
 
 from app.ai.service import AIService
 from app.ai.types import LessonGenerationRequest
-from app.models import CEFRBand, Lesson, Question, QuizAttempt, TopicMetadata, UserProgress, WordbankEntry
-from app.storage import LessonRepository, QuizAttemptRepository, UserProgressRepository, WordbankRepository
+from app.models import CEFRBand, Lesson, Question, QuizAttempt, TopicMetadata, UserProgress, WordbankEntry, VerbbankEntry
+from app.storage import LessonRepository, QuizAttemptRepository, UserProgressRepository, WordbankRepository, VerbbankRepository
 
 from .difficulty import DifficultyManager, SessionAction
 from .roadmap import ContentLibrary
@@ -99,6 +105,7 @@ class DashboardData:
     current_topic_summary: TopicAttemptSummary | None
     pending_incorrect_count: int
     wordbank_size: int
+    verbbank_size: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -165,6 +172,40 @@ class WordbankData:
 
 
 @dataclass(frozen=True, slots=True)
+class VerbbankData:
+    query: str
+    entries: tuple[VerbbankEntry, ...]
+
+
+class InMemoryVerbbankRepository:
+    """A tiny in-memory VerbbankRepository used as a default when no repository is provided.
+
+    It implements the minimal methods used by the service: upsert, search_for_user and delete_for_user.
+    """
+
+    def __init__(self) -> None:
+        self._store: dict[str, dict[str, VerbbankEntry]] = {}
+
+    def upsert(self, entry: VerbbankEntry) -> None:
+        user = self._store.setdefault(entry.user_id, {})
+        user[entry.verb] = entry
+
+    def search_for_user(self, user_id: str, query: str = "", limit: int = 100) -> list[VerbbankEntry]:
+        entries = list(self._store.get(user_id, {}).values())
+        if query.strip():
+            q = query.strip().casefold()
+            entries = [
+                e for e in entries
+                if q in e.verb.casefold() or q in e.conjugations.casefold() or q in e.topic.casefold()
+            ]
+        entries.sort(key=lambda e: e.verb)
+        return entries[:limit]
+
+    def delete_for_user(self, user_id: str) -> None:
+        self._store.pop(user_id, None)
+
+
+@dataclass(frozen=True, slots=True)
 class PlacementOutcome:
     cefr_band: str
     suggested_level: int
@@ -181,6 +222,7 @@ class LearningService:
             lesson_repository: LessonRepository,
             quiz_attempt_repository: QuizAttemptRepository,
             wordbank_repository: WordbankRepository,
+            verbbank_repository: VerbbankRepository | None = None,
             content_library: ContentLibrary,
             difficulty_manager: DifficultyManager,
             ai_service: AIService,
@@ -189,6 +231,8 @@ class LearningService:
         self.lesson_repository = lesson_repository
         self.quiz_attempt_repository = quiz_attempt_repository
         self.wordbank_repository = wordbank_repository
+        # Allow tests and callers to omit a verbbank repository; provide a small in-memory default.
+        self.verbbank_repository = verbbank_repository or InMemoryVerbbankRepository()
         self.content_library = content_library
         self.difficulty_manager = difficulty_manager
         self.ai_service = ai_service
@@ -283,6 +327,7 @@ class LearningService:
             current_topic_summary=current_topic_summary,
             pending_incorrect_count=pending_incorrect_count,
             wordbank_size=len(self.wordbank_repository.search_for_user(user_id, limit=1000)),
+            verbbank_size=len(self.verbbank_repository.search_for_user(user_id, limit=1000)),
         )
 
     def get_active_lesson(self, user_id: str = DEFAULT_USER_ID) -> Lesson | None:
@@ -514,6 +559,16 @@ class LearningService:
             pass
 
         return WordbankData(
+            query=query,
+            entries=tuple(entries),
+        )
+
+    def build_verbbank(self, user_id: str = DEFAULT_USER_ID, query: str = "") -> VerbbankData:
+        self.get_or_create_user_progress(user_id)
+        entries = list(self.verbbank_repository.search_for_user(user_id, query=query))
+        if self._refresh_verbbank_entries(user_id, entries):
+            entries = list(self.verbbank_repository.search_for_user(user_id, query=query))
+        return VerbbankData(
             query=query,
             entries=tuple(entries),
         )
@@ -832,7 +887,8 @@ class LearningService:
         # Pre-extract inline glosses from lesson explanations and question explanations
         translations = self._extract_lesson_translations(lesson)
         for sentence in lesson.example_sentences:
-            context_definition = f"Seen in example: {sentence.english.strip()}"
+            # Use the example's English translation as the word definition so learners see the direct gloss.
+            context_definition = sentence.english.strip()
             for token in self._extract_wordbank_tokens(sentence.romanian):
                 # Prefer an extracted translation/gloss when available.
                 normalized_token = self._normalize_wordbank_text(token)
@@ -851,6 +907,11 @@ class LearningService:
                     definition=definition or context_definition,
                     topic_id=lesson.topic,
                 )
+                # Attempt to add verb conjugation data for tokens that are verbs. This uses AI enrichment when available.
+                try:
+                    self._maybe_upsert_verbbank_entry(user_id=user_id, token=token, topic_id=lesson.topic)
+                except Exception:
+                    pass
 
     def _upsert_wordbank_entry(
             self,
@@ -895,10 +956,310 @@ class LearningService:
     def _normalize_wordbank_text(self, text: str) -> str:
         return " ".join(text.strip().split()).casefold()
 
+    def _parse_verbbank_conjugations(self, conjugations: str) -> object:
+        stripped = conjugations.strip()
+        if not stripped:
+            return {}
+        try:
+            return json.loads(stripped)
+        except json.JSONDecodeError:
+            return stripped
+
+    def _normalize_person_label(self, label: str) -> str:
+        normalized = label.strip().casefold().replace(" ", "")
+        aliases = {
+            "eu": "eu",
+            "tu": "tu",
+            "el": "el/ea",
+            "ea": "el/ea",
+            "el/ea": "el/ea",
+            "noi": "noi",
+            "voi": "voi",
+            "ei": "ei/ele",
+            "ele": "ei/ele",
+            "ei/ele": "ei/ele",
+        }
+        return aliases.get(normalized, label.strip())
+
+    def _normalize_verbbank_person_forms(self, value: object) -> dict[str, str]:
+        if isinstance(value, Mapping):
+            normalized: dict[str, str] = {}
+            for raw_label, raw_form in value.items():
+                if not isinstance(raw_label, str) or not isinstance(raw_form, str):
+                    continue
+                form = raw_form.strip()
+                if not form:
+                    continue
+                normalized[self._normalize_person_label(raw_label)] = form
+            return normalized
+        if not isinstance(value, str):
+            return {}
+
+        normalized: dict[str, str] = {}
+        for chunk in re.split(r"[;,]\s*", value.strip()):
+            piece = chunk.strip()
+            if not piece:
+                continue
+            match = re.match(r"^(eu|tu|el/ea|el|ea|noi|voi|ei/ele|ei|ele)\s+(.+)$", piece, flags=re.IGNORECASE)
+            if match is None:
+                continue
+            normalized[self._normalize_person_label(match.group(1))] = match.group(2).strip()
+        return normalized
+
+    def _normalize_legacy_verbbank_string(self, value: str) -> dict[str, object]:
+        text = value.strip().strip('"')
+        if not text:
+            return {}
+
+        match = re.match(r"^(?P<infinitive>[^()]+?)\s*\((?P<body>.+)\)$", text)
+        if match is None:
+            return {"infinitive": text} if text.startswith("a ") else {}
+
+        present: dict[str, str] = {}
+        participle = ""
+        gerund = ""
+        for chunk in (part.strip() for part in match.group("body").split(",")):
+            if not chunk:
+                continue
+            forms = self._normalize_verbbank_person_forms(chunk)
+            if forms:
+                present.update(forms)
+                continue
+            if not gerund and chunk.endswith("nd"):
+                gerund = chunk
+                continue
+            if not participle:
+                participle = chunk
+
+        normalized: dict[str, object] = {"infinitive": match.group("infinitive").strip()}
+        if present:
+            normalized["present"] = present
+        if participle:
+            normalized["participle"] = participle
+        if gerund:
+            normalized["gerund"] = gerund
+        return normalized
+
+    def _normalize_verbbank_conjugations(self, value: object) -> dict[str, object]:
+        if isinstance(value, str):
+            return self._normalize_legacy_verbbank_string(value)
+        if not isinstance(value, Mapping):
+            return {}
+
+        normalized: dict[str, object] = {}
+        infinitive = str(value.get("infinitive", "")).strip() if value.get("infinitive") is not None else ""
+        if not infinitive and value.get("lemma") is not None:
+            infinitive = str(value.get("lemma")).strip()
+        if infinitive:
+            normalized["infinitive"] = infinitive
+
+        for tense in ("present", "past", "future"):
+            forms = self._normalize_verbbank_person_forms(value.get(tense))
+            if forms:
+                normalized[tense] = forms
+
+        participle = ""
+        if value.get("participle") is not None:
+            participle = str(value.get("participle")).strip()
+        if not participle and isinstance(value.get("past"), Mapping):
+            raw_past = value.get("past")
+            if raw_past.get("participle") is not None:
+                participle = str(raw_past.get("participle")).strip()
+        if participle:
+            normalized["participle"] = participle
+
+        gerund = ""
+        if value.get("gerund") is not None:
+            gerund = str(value.get("gerund")).strip()
+        if not gerund and value.get("present_participle") is not None:
+            gerund = str(value.get("present_participle")).strip()
+        if gerund:
+            normalized["gerund"] = gerund
+        return normalized
+
+    def _merge_verbbank_conjugations(
+        self,
+        existing: dict[str, object],
+        fresh: dict[str, object],
+    ) -> dict[str, object]:
+        merged: dict[str, object] = {}
+        for scalar_key in ("infinitive", "participle", "gerund"):
+            scalar_value = str(fresh.get(scalar_key, "")).strip() or str(existing.get(scalar_key, "")).strip()
+            if scalar_value:
+                merged[scalar_key] = scalar_value
+
+        for tense in ("present", "past", "future"):
+            combined_forms: dict[str, str] = {}
+            for source in (existing.get(tense), fresh.get(tense)):
+                if not isinstance(source, Mapping):
+                    continue
+                for raw_label, raw_form in source.items():
+                    if not isinstance(raw_label, str) or not isinstance(raw_form, str):
+                        continue
+                    form = raw_form.strip()
+                    if form:
+                        combined_forms[self._normalize_person_label(raw_label)] = form
+            if combined_forms:
+                merged[tense] = combined_forms
+        return merged
+
+    def _serialize_verbbank_conjugations(self, payload: dict[str, object], fallback: str) -> str:
+        if payload:
+            return json.dumps(payload, ensure_ascii=False)
+        return fallback
+
+    def _translation_is_usable(self, translation: str) -> bool:
+        candidate = translation.strip()
+        if not candidate:
+            return False
+        if candidate.casefold().startswith("seen in example:"):
+            return False
+        if candidate.endswith((".", "!", "?")):
+            return False
+        return len(candidate.split()) <= 6
+
+    def _fallback_verbbank_translation(self, user_id: str, verb: str) -> str:
+        matches = list(self.wordbank_repository.search_for_user(user_id, query=verb, limit=5))
+        for entry in matches:
+            if entry.word == verb and self._translation_is_usable(entry.definition):
+                return entry.definition.strip()
+        return ""
+
+    def _verbbank_has_core_forms(self, payload: dict[str, object]) -> bool:
+        if not str(payload.get("infinitive", "")).strip():
+            return False
+        present = payload.get("present")
+        if not isinstance(present, Mapping) or not present.get("eu") or not present.get("el/ea"):
+            return False
+
+        has_past = bool(str(payload.get("participle", "")).strip())
+        past = payload.get("past")
+        if isinstance(past, Mapping) and (past.get("eu") or past.get("el/ea")):
+            has_past = True
+
+        future = payload.get("future")
+        has_future = isinstance(future, Mapping) and bool(future.get("eu") or future.get("el/ea"))
+        return has_past and has_future
+
+    def _verbbank_needs_enrichment(self, entry: VerbbankEntry) -> bool:
+        payload = self._normalize_verbbank_conjugations(self._parse_verbbank_conjugations(entry.conjugations))
+        return not self._translation_is_usable(entry.translation) or not self._verbbank_has_core_forms(payload)
+
+    def _refresh_verbbank_entries(self, user_id: str, entries: list[VerbbankEntry]) -> bool:
+        if not entries or self.ai_service is None:
+            return False
+
+        candidates = [entry.verb for entry in entries if self._verbbank_needs_enrichment(entry)]
+        if not candidates:
+            return False
+
+        conjugation_updates: dict[str, object] = {}
+        if hasattr(self.ai_service, "generate_conjugations"):
+            try:
+                conjugation_updates = self.ai_service.generate_conjugations(candidates)
+            except Exception:
+                conjugation_updates = {}
+
+        gloss_updates: dict[str, str] = {}
+        if hasattr(self.ai_service, "generate_glosses"):
+            try:
+                gloss_updates = self.ai_service.generate_glosses(candidates)
+            except Exception:
+                gloss_updates = {}
+
+        updated_any = False
+        for entry in entries:
+            if entry.verb not in candidates:
+                continue
+            existing_payload = self._normalize_verbbank_conjugations(self._parse_verbbank_conjugations(entry.conjugations))
+            fresh_payload = self._normalize_verbbank_conjugations(conjugation_updates.get(entry.verb))
+            merged_payload = self._merge_verbbank_conjugations(existing_payload, fresh_payload)
+            translation = gloss_updates.get(entry.verb, "").strip()
+            if not self._translation_is_usable(translation):
+                translation = entry.translation.strip()
+            if not self._translation_is_usable(translation):
+                translation = self._fallback_verbbank_translation(user_id, entry.verb)
+
+            serialized = self._serialize_verbbank_conjugations(merged_payload, entry.conjugations)
+            if serialized == entry.conjugations and translation == entry.translation:
+                continue
+
+            self.verbbank_repository.upsert(
+                VerbbankEntry(
+                    user_id=entry.user_id,
+                    verb=entry.verb,
+                    conjugations=serialized,
+                    translation=translation,
+                    topic=entry.topic,
+                    first_seen_at=entry.first_seen_at,
+                )
+            )
+            updated_any = True
+        return updated_any
+
+    def _maybe_upsert_verbbank_entry(self, *, user_id: str, token: str, topic_id: str) -> None:
+        """If the token appears to be a verb, ask AI for conjugations and persist a verbbank entry.
+        This is best-effort: failures are ignored so learning flow is not disrupted.
+        """
+        normalized_token = self._normalize_wordbank_text(token)
+        if not normalized_token:
+            return
+        existing_entry = None
+        try:
+            matches = list(self.verbbank_repository.search_for_user(user_id, query=normalized_token, limit=25))
+            existing_entry = next((entry for entry in matches if entry.verb == normalized_token), None)
+            if existing_entry is not None and not self._verbbank_needs_enrichment(existing_entry):
+                return
+        except Exception:
+            existing_entry = None
+
+        try:
+            if not self.ai_service or not hasattr(self.ai_service, "generate_conjugations"):
+                return
+            conj_map = self.ai_service.generate_conjugations([normalized_token])
+            conj = conj_map.get(normalized_token)
+            normalized_conjugations = self._normalize_verbbank_conjugations(conj)
+            serialized_conjugations = self._serialize_verbbank_conjugations(
+                normalized_conjugations,
+                json.dumps(conj, ensure_ascii=False) if conj else "",
+            )
+            if not serialized_conjugations:
+                return
+
+            translation = ""
+            try:
+                if hasattr(self.ai_service, "generate_glosses"):
+                    glosses = self.ai_service.generate_glosses([normalized_token])
+                    translation = glosses.get(normalized_token) or ""
+                if not self._translation_is_usable(translation) and existing_entry is not None:
+                    translation = existing_entry.translation
+                if not self._translation_is_usable(translation):
+                    translation = self._fallback_verbbank_translation(user_id, normalized_token)
+            except Exception:
+                translation = ""
+
+            entry_kwargs = {
+                "user_id": user_id,
+                "verb": normalized_token,
+                "conjugations": serialized_conjugations,
+                "translation": translation,
+                "topic": topic_id,
+            }
+            if existing_entry is not None:
+                entry_kwargs["first_seen_at"] = existing_entry.first_seen_at
+
+            self.verbbank_repository.upsert(VerbbankEntry(**entry_kwargs))
+        except Exception:
+            return
+
     def _clear_user_state(self, user_id: str) -> None:
         self.quiz_attempt_repository.delete_for_user(user_id)
         self.lesson_repository.delete_for_user(user_id)
         self.wordbank_repository.delete_for_user(user_id)
+        try:
+            self.verbbank_repository.delete_for_user(user_id)
+        except Exception:
+            pass
         self.user_progress_repository.delete(user_id)
 
     def _update_skill_scores(self, progress: UserProgress, lesson: Lesson, score_percent: float) -> None:

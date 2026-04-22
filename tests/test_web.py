@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import json
 from io import BytesIO
 from urllib.parse import urlencode
 from wsgiref.util import setup_testing_defaults
 
 from app.bootstrap import create_application
-from app.models import CEFRBand, Question, QuestionType
+from app.models import CEFRBand, Question, QuestionType, VerbbankEntry
 from app.ui import create_web_app
 
 
@@ -177,6 +178,98 @@ def test_wordbank_search_finds_encountered_words(monkeypatch, tmp_path):
     assert search_status == "200 OK"
     assert "buna" in search_html
     assert "hello" in search_html
+
+
+def test_verbbank_search_finds_encountered_verbs(monkeypatch, tmp_path):
+    monkeypatch.setenv("LUMINA_ROMANA_ENV", "test")
+    monkeypatch.setenv("LUMINA_ROMANA_DATA_DIR", str(tmp_path / "data"))
+    web_app = create_web_app(create_application())
+
+    # Ensure AIService will return conjugations for encountered verbs
+    def fake_conj(words):
+        return {w: {"infinitive": "a fi", "present": {"eu": "sunt", "tu": "esti", "el/ea": "este"}} for w in words}
+
+    monkeypatch.setattr(web_app.learning_service.ai_service, "generate_conjugations", fake_conj)
+
+    _, start_headers, _ = request(web_app, "POST", "/sessions/start", {})
+    lesson_path = start_headers["Location"]
+    lesson_status, _, lesson_html = request(web_app, "GET", lesson_path)
+    search_status, _, search_html = request(web_app, "GET", "/verbbank?q=este")
+
+    assert lesson_status == "200 OK"
+    assert search_status == "200 OK"
+    assert "este" in search_html
+    assert "a fi" in search_html
+
+
+def test_verbbank_shows_translation_from_ai(monkeypatch, tmp_path):
+    monkeypatch.setenv("LUMINA_ROMANA_ENV", "test")
+    monkeypatch.setenv("LUMINA_ROMANA_DATA_DIR", str(tmp_path / "data"))
+    web_app = create_web_app(create_application())
+
+    # Ensure AIService will return conjugations and a gloss for encountered verbs
+    def fake_conj(words):
+        return {w: {"infinitive": "a fi", "present": {"eu": "sunt", "tu": "esti", "el/ea": "este"}} for w in words}
+
+    def fake_gloss(words):
+        return {w: "to be" for w in words}
+
+    monkeypatch.setattr(web_app.learning_service.ai_service, "generate_conjugations", fake_conj)
+    monkeypatch.setattr(web_app.learning_service.ai_service, "generate_glosses", fake_gloss)
+
+    _, start_headers, _ = request(web_app, "POST", "/sessions/start", {})
+    lesson_path = start_headers["Location"]
+    lesson_status, _, lesson_html = request(web_app, "GET", lesson_path)
+    search_status, _, search_html = request(web_app, "GET", "/verbbank?q=este")
+
+    assert lesson_status == "200 OK"
+    assert search_status == "200 OK"
+    assert "este" in search_html
+    assert "to be" in search_html
+
+
+def test_verbbank_refreshes_legacy_entry_and_renders_core_tenses(monkeypatch, tmp_path):
+    monkeypatch.setenv("LUMINA_ROMANA_ENV", "test")
+    monkeypatch.setenv("LUMINA_ROMANA_DATA_DIR", str(tmp_path / "data"))
+    web_app = create_web_app(create_application())
+    web_app.learning_service.get_or_create_user_progress()
+
+    web_app.application.persistence.verbbank.upsert(
+        VerbbankEntry(
+            user_id="default-learner",
+            verb="vad",
+            conjugations=json.dumps("a vedea (eu vad, el/ea vede, vazut, vazand)"),
+            topic="core_cases",
+        )
+    )
+
+    def fake_conj(words):
+        return {
+            w: {
+                "infinitive": "a vedea",
+                "present": {"eu": "vad", "el/ea": "vede"},
+                "past": {"eu": "am vazut", "el/ea": "a vazut"},
+                "future": {"eu": "voi vedea", "el/ea": "va vedea"},
+                "participle": "vazut",
+                "gerund": "vazand",
+            }
+            for w in words
+        }
+
+    def fake_gloss(words):
+        return {w: "to see" for w in words}
+
+    monkeypatch.setattr(web_app.learning_service.ai_service, "generate_conjugations", fake_conj)
+    monkeypatch.setattr(web_app.learning_service.ai_service, "generate_glosses", fake_gloss)
+
+    search_status, _, search_html = request(web_app, "GET", "/verbbank?q=vad")
+
+    assert search_status == "200 OK"
+    assert "vad" in search_html
+    assert "to see" in search_html
+    assert "a vedea" in search_html
+    assert "am vazut" in search_html
+    assert "voi vedea" in search_html
 
 
 def test_free_response_questions_render_romanian_character_toolbar(monkeypatch, tmp_path):

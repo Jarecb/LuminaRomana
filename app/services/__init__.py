@@ -1,3 +1,4 @@
+"""Services package exports (difficulty, quality, roadmap helpers)."""
 from app.services.difficulty import DifficultyAssessment, DifficultyManager, PromptConstraints, ReviewSession, SessionAction
 from app.services.quality import (
     ContentQualityReport,

@@ -1,3 +1,8 @@
+"""Quality evaluation and offline question seeding services.
+
+QualityService runs sampling workflows and seeds the offline question bank by
+orchestrating AI generation and repository persistence.
+"""
 from __future__ import annotations
 
 from collections.abc import Sequence

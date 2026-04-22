@@ -105,7 +105,7 @@ def test_start_or_resume_lesson_session_adds_example_sentence_words_to_wordbank(
 
     assert session.lesson is not None
     assert any(
-        entry.word == "ana" and entry.definition == "Seen in example: Hello, I am Ana."
+        entry.word == "ana" and entry.definition == "Hello, I am Ana."
         for entry in wordbank.entries
     )
 
