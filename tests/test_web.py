@@ -6,7 +6,8 @@ from urllib.parse import urlencode
 from wsgiref.util import setup_testing_defaults
 
 from app.bootstrap import create_application
-from app.models import CEFRBand, Question, QuestionType, VerbbankEntry
+from app.models import CEFRBand, Question, QuestionType, VerbbankEntry, WordbankEntry
+from app.services.learning import DEFAULT_USER_ID
 from app.ui import create_web_app
 
 
@@ -180,6 +181,80 @@ def test_wordbank_search_finds_encountered_words(monkeypatch, tmp_path):
     assert "hello" in search_html
 
 
+def test_wordbank_backfills_missing_curated_example_usage(monkeypatch, tmp_path):
+    monkeypatch.setenv("LUMINA_ROMANA_ENV", "test")
+    monkeypatch.setenv("LUMINA_ROMANA_DATA_DIR", str(tmp_path / "data"))
+    web_app = create_web_app(create_application())
+    web_app.learning_service.get_or_create_user_progress(DEFAULT_USER_ID)
+    web_app.application.persistence.wordbank.upsert(
+        WordbankEntry(
+            user_id=DEFAULT_USER_ID,
+            word="buna",
+            definition="hello",
+            topic="romanian_basics",
+            example_usage="",
+        )
+    )
+
+    search_status, _, search_html = request(web_app, "GET", "/wordbank?q=buna")
+    refreshed_entry = web_app.application.persistence.wordbank.search_for_user(DEFAULT_USER_ID, query="buna")[0]
+
+    assert search_status == "200 OK"
+    assert "Example: Buna, eu sunt Ana." in search_html
+    assert refreshed_entry.example_usage == "Buna, eu sunt Ana."
+
+
+def test_wordbank_preserves_curated_gloss_for_eu(monkeypatch, tmp_path):
+    monkeypatch.setenv("LUMINA_ROMANA_ENV", "test")
+    monkeypatch.setenv("LUMINA_ROMANA_DATA_DIR", str(tmp_path / "data"))
+    web_app = create_web_app(create_application())
+
+    _, start_headers, _ = request(web_app, "POST", "/sessions/start", {})
+    lesson_path = start_headers["Location"]
+    lesson_status, _, lesson_html = request(web_app, "GET", lesson_path)
+    search_status, _, search_html = request(web_app, "GET", "/wordbank?q=eu")
+
+    assert lesson_status == "200 OK"
+    assert "Question set" in lesson_html
+    assert search_status == "200 OK"
+    assert "eu" in search_html
+    assert "I" in search_html
+    assert "Example: Buna, eu sunt Ana." in search_html
+
+
+def test_wordbank_refreshes_sentence_definition_into_gloss(monkeypatch, tmp_path):
+    monkeypatch.setenv("LUMINA_ROMANA_ENV", "test")
+    monkeypatch.setenv("LUMINA_ROMANA_DATA_DIR", str(tmp_path / "data"))
+    web_app = create_web_app(create_application())
+    web_app.learning_service.get_or_create_user_progress(DEFAULT_USER_ID)
+    web_app.application.persistence.wordbank.upsert(
+        WordbankEntry(
+            user_id=DEFAULT_USER_ID,
+            word="eu",
+            definition="Hello, I am Ana.",
+            topic="romanian_basics",
+            example_usage="",
+        )
+    )
+
+    def fake_gloss(words):
+        assert list(words) == ["eu"]
+        return {"eu": "I"}
+
+    web_app.learning_service.ai_service.providers = [object()]
+    monkeypatch.setattr(web_app.learning_service.ai_service, "generate_glosses", fake_gloss)
+
+    search_status, _, search_html = request(web_app, "GET", "/wordbank?q=eu")
+    refreshed_entry = web_app.application.persistence.wordbank.search_for_user(DEFAULT_USER_ID, query="eu")[0]
+
+    assert search_status == "200 OK"
+    assert "eu" in search_html
+    assert "I" in search_html
+    assert "Example: Hello, I am Ana." in search_html
+    assert refreshed_entry.definition == "I"
+    assert refreshed_entry.example_usage == "Hello, I am Ana."
+
+
 def test_verbbank_search_finds_encountered_verbs(monkeypatch, tmp_path):
     monkeypatch.setenv("LUMINA_ROMANA_ENV", "test")
     monkeypatch.setenv("LUMINA_ROMANA_DATA_DIR", str(tmp_path / "data"))
@@ -200,6 +275,37 @@ def test_verbbank_search_finds_encountered_verbs(monkeypatch, tmp_path):
     assert search_status == "200 OK"
     assert "este" in search_html
     assert "a fi" in search_html
+
+
+def test_verbbank_bootstraps_curated_basic_verbs_from_existing_wordbank_entries(monkeypatch, tmp_path):
+    monkeypatch.setenv("LUMINA_ROMANA_ENV", "test")
+    monkeypatch.setenv("LUMINA_ROMANA_DATA_DIR", str(tmp_path / "data"))
+    web_app = create_web_app(create_application())
+    web_app.learning_service.get_or_create_user_progress(DEFAULT_USER_ID)
+    for word, definition in (
+        ("sunt", "am / are"),
+        ("esti", "are for one person addressed"),
+        ("este", "is"),
+        ("suntem", "are for we"),
+    ):
+        web_app.application.persistence.wordbank.upsert(
+            WordbankEntry(
+                user_id=DEFAULT_USER_ID,
+                word=word,
+                definition=definition,
+                topic="romanian_basics",
+                example_usage="",
+            )
+        )
+
+    search_status, _, search_html = request(web_app, "GET", "/verbbank?q=fi")
+    entries = web_app.application.persistence.verbbank.search_for_user(DEFAULT_USER_ID, query="fi")
+
+    assert search_status == "200 OK"
+    assert entries
+    assert any(entry.verb == "sunt" for entry in entries)
+    assert "a fi" in search_html
+    assert "to be" in search_html
 
 
 def test_verbbank_shows_translation_from_ai(monkeypatch, tmp_path):

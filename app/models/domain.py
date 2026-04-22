@@ -104,6 +104,7 @@ class WordbankEntry:
     word: str
     definition: str
     topic: str
+    example_usage: str = ""
     first_seen_at: datetime = field(default_factory=utc_now)
 
     def __post_init__(self) -> None:

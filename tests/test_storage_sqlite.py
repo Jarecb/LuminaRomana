@@ -119,6 +119,7 @@ def test_wordbank_entries_are_stored_and_searchable(tmp_path):
             word="baiatul",
             definition="the boy",
             topic="nouns_and_articles",
+            example_usage="Baiatul este aici.",
         )
     )
     wordbank_repository.upsert(
@@ -127,14 +128,18 @@ def test_wordbank_entries_are_stored_and_searchable(tmp_path):
             word="cadoul",
             definition="the gift",
             topic="nouns_and_articles",
+            example_usage="Cadoul este nou.",
         )
     )
 
     all_entries = wordbank_repository.search_for_user("learner-1")
     filtered_entries = wordbank_repository.search_for_user("learner-1", query="gift")
+    example_filtered_entries = wordbank_repository.search_for_user("learner-1", query="cadoul este")
 
     assert [entry.word for entry in all_entries] == ["baiatul", "cadoul"]
     assert [entry.word for entry in filtered_entries] == ["cadoul"]
+    assert [entry.word for entry in example_filtered_entries] == ["cadoul"]
+    assert all_entries[0].example_usage == "Baiatul este aici."
 
     # Verbbank storage test
     verbbank_repository = SQLiteVerbbankRepository(storage)
@@ -187,6 +192,31 @@ def test_initialize_migrates_legacy_verbbank_table(tmp_path):
         columns = [row[1] for row in conn.execute("PRAGMA table_info(verbbank)")]
 
     assert "translation" in columns
+
+
+def test_initialize_migrates_legacy_wordbank_table(tmp_path):
+    db_path = tmp_path / "legacy-wordbank.db"
+    with sqlite3.connect(db_path) as conn:
+        conn.executescript(
+            """
+            CREATE TABLE wordbank (
+                user_id TEXT NOT NULL,
+                word TEXT NOT NULL,
+                definition TEXT NOT NULL,
+                topic TEXT NOT NULL,
+                first_seen_at TEXT NOT NULL,
+                PRIMARY KEY (user_id, word)
+            );
+            """
+        )
+
+    storage = SQLiteStorage(db_path)
+    storage.initialize()
+
+    with sqlite3.connect(db_path) as conn:
+        columns = [row[1] for row in conn.execute("PRAGMA table_info(wordbank)")]
+
+    assert "example_usage" in columns
 
 
 def test_pending_incorrect_questions_persist_until_answered_correctly(tmp_path):

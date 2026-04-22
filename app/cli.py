@@ -10,7 +10,7 @@ import argparse
 import shutil
 import sys
 
-from app.bootstrap import create_application
+from app.bootstrap import Application, create_application
 from app.ui import run_dev_server
 
 
@@ -45,6 +45,28 @@ def main(argv: Sequence[str] | None = None) -> int:
         action="store_true",
         dest="offline",
         help="Run the web server in offline-only mode with AI generation disabled for this process.",
+    )
+    serve_parser.add_argument(
+        "--seed-offline-questions",
+        action="store_true",
+        help="Top up the archived offline question bank before the web server starts accepting requests.",
+    )
+    serve_parser.add_argument(
+        "--seed-topics",
+        nargs="*",
+        help="Optional topic ids to seed before serving. Defaults to the full roadmap from A1 through B2.",
+    )
+    serve_parser.add_argument(
+        "--seed-question-count",
+        type=int,
+        default=DEFAULT_OFFLINE_QUESTION_TARGET,
+        help=f"Minimum archived question count per topic when startup seeding is enabled. Defaults to {DEFAULT_OFFLINE_QUESTION_TARGET}.",
+    )
+    serve_parser.add_argument(
+        "--seed-goal",
+        default="lesson",
+        choices=("lesson", "review", "practice"),
+        help="Session goal to use when startup seeding generates content before serving.",
     )
     subcommands.add_parser("status", help="Print configuration and runtime status.")
     subcommands.add_parser("reset-progress", help="Reset the default learner's local progress for testing.")
@@ -111,6 +133,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     command = args.command or "status"
     app = create_application(offline_only=bool(getattr(args, "offline", False)) if command == "serve" else False)
     if command == "serve":
+        if args.seed_offline_questions:
+            print("Seeding offline question bank before starting web server.")
+            _run_offline_question_seed(
+                app,
+                topic_ids=args.seed_topics,
+                question_count=args.seed_question_count,
+                session_goal=args.seed_goal,
+            )
         run_dev_server(app)
         return 0
     if command == "reset-progress":
@@ -166,31 +196,12 @@ def main(argv: Sequence[str] | None = None) -> int:
                 print(f"  warnings: {' | '.join(sample.warnings)}")
         return 0
     if command == "seed-offline-questions":
-        print(
-            "AI provider: "
-            f"{app.ai_service.provider.provider_name} "
-            f"({app.ai_service.provider.model}, configured={app.ai_service.is_configured})"
-        )
-        if not app.ai_service.is_configured:
-            print("Seeding will use fallback content only because no AI provider is configured for this process.")
-        report = app.quality_service.seed_offline_question_bank(
+        _run_offline_question_seed(
+            app,
             topic_ids=args.topics,
             question_count=args.question_count,
             session_goal=args.goal,
         )
-        print("Lumina Romana offline question bank seed")
-        print(f"Topics processed: {report.total_topics}")
-        print(f"Questions before: {report.total_questions_before}")
-        print(f"Questions after: {report.total_questions_after}")
-        print(f"Questions added: {report.total_questions_added}")
-        for topic in report.topics:
-            print(
-                f"- {topic.topic_id}: level {topic.level} / {topic.cefr_band} / "
-                f"source={topic.source} / before={topic.stored_question_count_before} / "
-                f"after={topic.stored_question_count_after} / added={topic.added_question_count}"
-            )
-            if topic.warnings:
-                print(f"  warnings: {' | '.join(topic.warnings)}")
         return 0
 
     app.logger.info("Loading %s diagnostics in %s mode", app.settings.app_name, app.settings.environment)
@@ -220,3 +231,37 @@ def main(argv: Sequence[str] | None = None) -> int:
     else:
         print("Install with `pip install -e .` if you want the `lumina-romana` command in your environment.")
     return 0
+
+
+def _run_offline_question_seed(
+    app: Application,
+    *,
+    topic_ids: Sequence[str] | None,
+    question_count: int,
+    session_goal: str,
+) -> None:
+    print(
+        "AI provider: "
+        f"{app.ai_service.provider.provider_name} "
+        f"({app.ai_service.provider.model}, configured={app.ai_service.is_configured})"
+    )
+    if not app.ai_service.is_configured:
+        print("Seeding will use fallback content only because no AI provider is configured for this process.")
+    report = app.quality_service.seed_offline_question_bank(
+        topic_ids=topic_ids,
+        question_count=question_count,
+        session_goal=session_goal,
+    )
+    print("Lumina Romana offline question bank seed")
+    print(f"Topics processed: {report.total_topics}")
+    print(f"Questions before: {report.total_questions_before}")
+    print(f"Questions after: {report.total_questions_after}")
+    print(f"Questions added: {report.total_questions_added}")
+    for topic in report.topics:
+        print(
+            f"- {topic.topic_id}: level {topic.level} / {topic.cefr_band} / "
+            f"source={topic.source} / before={topic.stored_question_count_before} / "
+            f"after={topic.stored_question_count_after} / added={topic.added_question_count}"
+        )
+        if topic.warnings:
+            print(f"  warnings: {' | '.join(topic.warnings)}")

@@ -28,6 +28,53 @@ PASSING_SCORE = 80.0
 MIN_ATTEMPTS_TO_ADVANCE = 5
 QUESTION_SET_COOLDOWN = 5
 WORD_TOKEN_PATTERN = re.compile(r"[A-Za-zĂÂÎȘȚăâîșțŞŢşţ]+(?:[-'][A-Za-zĂÂÎȘȚăâîșțŞŢşţ]+)*")
+QUOTED_TEXT_PATTERN = re.compile(r"['\"](?P<text>[^'\"]{2,})['\"]")
+CURATED_VERB_CONJUGATIONS: dict[str, tuple[dict[str, object], str]] = {
+    "sunt": (
+        {
+            "infinitive": "a fi",
+            "present": {"eu": "sunt", "tu": "esti", "el/ea": "este", "noi": "suntem", "voi": "sinteti", "ei/ele": "sint"},
+            "past": {"eu": "am fost", "el/ea": "a fost"},
+            "future": {"eu": "voi fi", "el/ea": "va fi"},
+            "participle": "fost",
+            "gerund": "fiind",
+        },
+        "to be",
+    ),
+    "esti": (
+        {
+            "infinitive": "a fi",
+            "present": {"eu": "sunt", "tu": "esti", "el/ea": "este", "noi": "suntem", "voi": "sinteti", "ei/ele": "sint"},
+            "past": {"eu": "am fost", "el/ea": "a fost"},
+            "future": {"eu": "voi fi", "el/ea": "va fi"},
+            "participle": "fost",
+            "gerund": "fiind",
+        },
+        "to be",
+    ),
+    "este": (
+        {
+            "infinitive": "a fi",
+            "present": {"eu": "sunt", "tu": "esti", "el/ea": "este", "noi": "suntem", "voi": "sinteti", "ei/ele": "sint"},
+            "past": {"eu": "am fost", "el/ea": "a fost"},
+            "future": {"eu": "voi fi", "el/ea": "va fi"},
+            "participle": "fost",
+            "gerund": "fiind",
+        },
+        "to be",
+    ),
+    "suntem": (
+        {
+            "infinitive": "a fi",
+            "present": {"eu": "sunt", "tu": "esti", "el/ea": "este", "noi": "suntem", "voi": "sinteti", "ei/ele": "sint"},
+            "past": {"eu": "am fost", "el/ea": "a fost"},
+            "future": {"eu": "voi fi", "el/ea": "va fi"},
+            "participle": "fost",
+            "gerund": "fiind",
+        },
+        "to be",
+    ),
+}
 
 LEVEL_PRINCIPLES: dict[str, tuple[str, ...]] = {
     "romanian_basics": (
@@ -532,27 +579,50 @@ class LearningService:
     def build_wordbank(self, user_id: str = DEFAULT_USER_ID, query: str = "") -> WordbankData:
         self.get_or_create_user_progress(user_id)
         entries = list(self.wordbank_repository.search_for_user(user_id, query=query))
+        if self._backfill_wordbank_examples(user_id, entries):
+            entries = list(self.wordbank_repository.search_for_user(user_id, query=query))
 
-        # If AI is configured, enrich entries that lack concise translations.
+        # Repair entries that only have context text instead of a concise gloss.
         try:
-            if self.ai_service and self.ai_service.is_configured:
-                # Find entries that only have the example-based definition or ambiguous defs
-                candidates: list[str] = []
-                for entry in entries:
-                    if entry.definition.strip().lower().startswith("seen in example:"):
-                        candidates.append(entry.word)
-                if candidates:
-                    glosses = self.ai_service.generate_glosses(candidates)
-                    for w, gloss in glosses.items():
-                        # Update DB for matching stored word (normalize key)
-                        norm = self._normalize_wordbank_text(w)
-                        if gloss:
-                            try:
-                                self.wordbank_repository.update_definition(user_id, norm, gloss)
-                            except Exception:
-                                # If repository doesn't support update or update fails, skip enrichment for this word
-                                pass
-                    # Re-read entries after enrichment
+            updated_any = False
+            candidates: list[str] = []
+            for entry in entries:
+                if not self._wordbank_definition_needs_enrichment(entry.definition):
+                    continue
+                curated_definition = self._curated_wordbank_definition(entry.topic, entry.word)
+                if curated_definition:
+                    self.wordbank_repository.update_definition(
+                        user_id,
+                        entry.word,
+                        curated_definition,
+                        example_usage=self._repaired_wordbank_example_usage(entry),
+                    )
+                    updated_any = True
+                    continue
+                candidates.append(entry.word)
+
+            if updated_any:
+                entries = list(self.wordbank_repository.search_for_user(user_id, query=query))
+
+            if candidates and self.ai_service and self.ai_service.is_configured:
+                glosses = self.ai_service.generate_glosses(tuple(dict.fromkeys(candidates)))
+                for w, gloss in glosses.items():
+                    # Update DB for matching stored word (normalize key)
+                    norm = self._normalize_wordbank_text(w)
+                    if gloss:
+                        try:
+                            matching_entry = next((entry for entry in entries if entry.word == norm), None)
+                            self.wordbank_repository.update_definition(
+                                user_id,
+                                norm,
+                                gloss,
+                                example_usage=self._repaired_wordbank_example_usage(matching_entry),
+                            )
+                            updated_any = True
+                        except Exception:
+                            # If repository doesn't support update or update fails, skip enrichment for this word
+                            pass
+                if updated_any:
                     entries = list(self.wordbank_repository.search_for_user(user_id, query=query))
         except Exception:
             # If AI enrichment fails, ignore and return current entries
@@ -563,8 +633,105 @@ class LearningService:
             entries=tuple(entries),
         )
 
+    def _wordbank_definition_needs_enrichment(self, definition: str) -> bool:
+        candidate = definition.strip()
+        if not candidate:
+            return False
+        lowered = candidate.casefold()
+        if lowered.startswith("seen in example:"):
+            return True
+        if any(mark in candidate for mark in (".", "!", "?", ";", ":")):
+            return True
+        return len(candidate.split()) > 6
+
+    def _curated_wordbank_definition(self, topic_id: str, word: str) -> str:
+        normalized_word = self._normalize_wordbank_text(word)
+        for vocab_word, definition in self.content_library.vocabulary_for_topic(topic_id):
+            if self._normalize_wordbank_text(vocab_word) == normalized_word:
+                return definition.strip()
+        return ""
+
+    def _repaired_wordbank_example_usage(self, entry: WordbankEntry | None) -> str | None:
+        if entry is None:
+            return None
+        example_usage = entry.example_usage.strip()
+        if example_usage:
+            return example_usage
+        if self._wordbank_definition_needs_enrichment(entry.definition):
+            return entry.definition.strip()
+        curated_example = self._curated_wordbank_example_usage(entry.topic, entry.word)
+        if curated_example:
+            return curated_example
+        return None
+
+    def _curated_wordbank_example_usage(self, topic_id: str, word: str) -> str:
+        normalized_word = self._normalize_wordbank_text(word)
+        best_match = ""
+        for candidate in self._topic_example_candidates(topic_id):
+            tokens = self._extract_wordbank_tokens(candidate)
+            if normalized_word not in tokens:
+                continue
+            if len(tokens) > 1:
+                return candidate
+            if not best_match:
+                best_match = candidate
+        return best_match
+
+    def _topic_example_candidates(self, topic_id: str) -> tuple[str, ...]:
+        lesson = self._fallback_lesson_for_topic(topic_id)
+        if lesson is None:
+            return ()
+
+        candidates: list[str] = []
+        seen: set[str] = set()
+
+        def add_candidate(value: str) -> None:
+            normalized = " ".join(value.strip().split())
+            if not normalized or normalized in seen:
+                return
+            seen.add(normalized)
+            candidates.append(normalized)
+
+        for sentence in lesson.example_sentences:
+            add_candidate(sentence.romanian)
+        for text in (lesson.explanation_text, *lesson.key_rules):
+            for phrase in self._extract_quoted_text(text):
+                add_candidate(phrase)
+        for question in lesson.quiz_questions:
+            for phrase in self._extract_quoted_text(question.explanation):
+                add_candidate(phrase)
+            if len(self._extract_wordbank_tokens(question.correct_answer)) > 1:
+                add_candidate(question.correct_answer)
+        return tuple(candidates)
+
+    def _extract_quoted_text(self, text: str) -> tuple[str, ...]:
+        if not text:
+            return ()
+        phrases: list[str] = []
+        seen: set[str] = set()
+        for match in QUOTED_TEXT_PATTERN.finditer(text):
+            candidate = " ".join(match.group("text").strip().split())
+            if not candidate or candidate in seen:
+                continue
+            seen.add(candidate)
+            phrases.append(candidate)
+        return tuple(phrases)
+
+    def _fallback_lesson_for_topic(self, topic_id: str) -> Lesson | None:
+        topic = self.content_library.get_topic(topic_id)
+        if topic is None or not self.content_library.supports_fallback(topic_id):
+            return None
+        return self.content_library.build_fallback_lesson(
+            topic_id,
+            difficulty=topic.level,
+            question_count=999,
+            session_goal="lesson",
+            include_archived_questions=False,
+        )
+
     def build_verbbank(self, user_id: str = DEFAULT_USER_ID, query: str = "") -> VerbbankData:
         self.get_or_create_user_progress(user_id)
+        self._bootstrap_verbbank_entries(user_id)
         entries = list(self.verbbank_repository.search_for_user(user_id, query=query))
         if self._refresh_verbbank_entries(user_id, entries):
             entries = list(self.verbbank_repository.search_for_user(user_id, query=query))
@@ -572,6 +739,28 @@ class LearningService:
             query=query,
             entries=tuple(entries),
         )
+
+    def _backfill_wordbank_examples(self, user_id: str, entries: list[WordbankEntry]) -> bool:
+        updated_any = False
+        for entry in entries:
+            if entry.example_usage.strip():
+                continue
+            if self._wordbank_definition_needs_enrichment(entry.definition):
+                continue
+            example_usage = self._curated_wordbank_example_usage(entry.topic, entry.word)
+            if not example_usage:
+                repaired_usage = self._repaired_wordbank_example_usage(entry)
+                example_usage = repaired_usage.strip() if repaired_usage else ""
+            if not example_usage:
+                continue
+            self.wordbank_repository.update_definition(
+                user_id,
+                entry.word,
+                entry.definition,
+                example_usage=example_usage,
+            )
+            updated_any = True
+        return updated_any
 
     def evaluate_placement(self, section_scores: Mapping[str, float]) -> PlacementOutcome:
         blueprint = self.content_library.placement_blueprint()
@@ -856,6 +1045,7 @@ class LearningService:
                 user_id=user_id,
                 word=word,
                 definition=definition,
+                example_usage="",
                 topic_id=topic_id,
             )
 
@@ -887,12 +1077,12 @@ class LearningService:
         # Pre-extract inline glosses from lesson explanations and question explanations
         translations = self._extract_lesson_translations(lesson)
         for sentence in lesson.example_sentences:
-            # Use the example's English translation as the word definition so learners see the direct gloss.
             context_definition = sentence.english.strip()
+            example_usage = sentence.romanian.strip()
             for token in self._extract_wordbank_tokens(sentence.romanian):
                 # Prefer an extracted translation/gloss when available.
                 normalized_token = self._normalize_wordbank_text(token)
-                definition = translations.get(normalized_token)
+                definition = translations.get(normalized_token) or self._curated_wordbank_definition(lesson.topic, normalized_token)
                 if not definition:
                     # Try simple stemming heuristics to find a lemma match (strip common definite/article endings)
                     for suffix in ("ul", "ului", "lor", "ii", "i", "a", "e", "le"):
@@ -905,6 +1095,7 @@ class LearningService:
                     user_id=user_id,
                     word=token,
                     definition=definition or context_definition,
+                    example_usage=example_usage,
                     topic_id=lesson.topic,
                 )
                 # Attempt to add verb conjugation data for tokens that are verbs. This uses AI enrichment when available.
@@ -919,20 +1110,55 @@ class LearningService:
             user_id: str,
             word: str,
             definition: str,
+            example_usage: str = "",
             topic_id: str,
     ) -> None:
         normalized_word = self._normalize_wordbank_text(word)
         normalized_definition = definition.strip()
+        normalized_example_usage = example_usage.strip()
         if not normalized_word or not normalized_definition:
             return
+        try:
+            matches = self.wordbank_repository.search_for_user(user_id, query=normalized_word, limit=25)
+        except Exception:
+            matches = []
+        existing_entry = next((entry for entry in matches if entry.word == normalized_word), None)
+        if existing_entry is not None:
+            normalized_definition = self._preferred_wordbank_definition(
+                existing_entry.definition,
+                normalized_definition,
+            )
+            normalized_example_usage = self._preferred_wordbank_example(
+                existing_entry.example_usage,
+                normalized_example_usage,
+            )
         self.wordbank_repository.upsert(
             WordbankEntry(
                 user_id=user_id,
                 word=normalized_word,
                 definition=normalized_definition,
                 topic=topic_id,
+                example_usage=normalized_example_usage,
             )
         )
+
+    def _preferred_wordbank_definition(self, existing_definition: str, new_definition: str) -> str:
+        existing_needs = self._wordbank_definition_needs_enrichment(existing_definition)
+        new_needs = self._wordbank_definition_needs_enrichment(new_definition)
+        if existing_needs and not new_needs:
+            return new_definition.strip()
+        if not existing_needs and new_needs:
+            return existing_definition.strip()
+        existing_candidate = existing_definition.strip()
+        new_candidate = new_definition.strip()
+        if len(new_candidate.split()) < len(existing_candidate.split()):
+            return new_candidate
+        return existing_candidate
+
+    def _preferred_wordbank_example(self, existing_example: str, new_example: str) -> str:
+        if new_example.strip():
+            return new_example.strip()
+        return existing_example.strip()
 
     def _extract_wordbank_tokens(self, text: str) -> tuple[str, ...]:
         seen: set[str] = set()
@@ -1196,6 +1422,134 @@ class LearningService:
             )
             updated_any = True
         return updated_any
+
+    def _bootstrap_verbbank_entries(self, user_id: str) -> bool:
+        try:
+            wordbank_entries = list(self.wordbank_repository.search_for_user(user_id, limit=1000))
+            existing_entries = list(self.verbbank_repository.search_for_user(user_id, limit=1000))
+        except Exception:
+            return False
+
+        existing_by_verb = {entry.verb: entry for entry in existing_entries}
+        topic_candidates: dict[str, set[str]] = {}
+        candidate_words: list[str] = []
+        candidate_topics: dict[str, str] = {}
+        candidate_seen: set[str] = set()
+        for entry in wordbank_entries:
+            is_candidate = entry.word in CURATED_VERB_CONJUGATIONS
+            if not is_candidate:
+                if entry.topic not in topic_candidates:
+                    topic_candidates[entry.topic] = set(self._topic_verbbank_candidates(entry.topic))
+                is_candidate = entry.word in topic_candidates[entry.topic]
+            if not is_candidate or entry.word in candidate_seen:
+                continue
+            candidate_seen.add(entry.word)
+            candidate_words.append(entry.word)
+            candidate_topics[entry.word] = entry.topic
+
+        unique_candidates = tuple(
+            word for word in candidate_words
+            if word not in existing_by_verb or self._verbbank_needs_enrichment(existing_by_verb[word])
+        )
+        if not unique_candidates:
+            return False
+
+        conjugation_updates: dict[str, object] = {}
+        gloss_updates: dict[str, str] = {}
+        if self.ai_service is not None and getattr(self.ai_service, "is_configured", False):
+            if hasattr(self.ai_service, "generate_conjugations"):
+                try:
+                    conjugation_updates = self.ai_service.generate_conjugations(unique_candidates)
+                except Exception:
+                    conjugation_updates = {}
+            if hasattr(self.ai_service, "generate_glosses"):
+                try:
+                    gloss_updates = self.ai_service.generate_glosses(unique_candidates)
+                except Exception:
+                    gloss_updates = {}
+
+        updated_any = False
+        for word in unique_candidates:
+            existing_entry = existing_by_verb.get(word)
+            existing_payload: dict[str, object] = {}
+            existing_conjugations = ""
+            existing_translation = ""
+            first_seen_at = None
+            if existing_entry is not None:
+                existing_payload = self._normalize_verbbank_conjugations(self._parse_verbbank_conjugations(existing_entry.conjugations))
+                existing_conjugations = existing_entry.conjugations
+                existing_translation = existing_entry.translation
+                first_seen_at = existing_entry.first_seen_at
+
+            fallback_payload, fallback_translation = CURATED_VERB_CONJUGATIONS.get(word, ({}, ""))
+            fresh_payload = self._normalize_verbbank_conjugations(conjugation_updates.get(word))
+            if not fresh_payload:
+                fresh_payload = fallback_payload
+            merged_payload = self._merge_verbbank_conjugations(existing_payload, fresh_payload)
+            serialized = self._serialize_verbbank_conjugations(
+                merged_payload,
+                existing_conjugations or (json.dumps(fresh_payload, ensure_ascii=False) if fresh_payload else ""),
+            )
+            if not serialized:
+                continue
+
+            translation = gloss_updates.get(word, "").strip()
+            if not self._translation_is_usable(translation):
+                translation = existing_translation.strip()
+            if not self._translation_is_usable(translation):
+                translation = fallback_translation
+            if not self._translation_is_usable(translation):
+                translation = self._fallback_verbbank_translation(user_id, word)
+
+            entry_kwargs = {
+                "user_id": user_id,
+                "verb": word,
+                "conjugations": serialized,
+                "translation": translation,
+                "topic": candidate_topics[word],
+            }
+            if first_seen_at is not None:
+                entry_kwargs["first_seen_at"] = first_seen_at
+            self.verbbank_repository.upsert(VerbbankEntry(**entry_kwargs))
+            updated_any = True
+        return updated_any
+
+    def _topic_verbbank_candidates(self, topic_id: str) -> tuple[str, ...]:
+        lesson = self._fallback_lesson_for_topic(topic_id)
+        if lesson is None:
+            return ()
+
+        candidates: list[str] = []
+        seen: set[str] = set()
+
+        def add_tokens(text: str) -> None:
+            for token in self._extract_wordbank_tokens(text):
+                if token in seen:
+                    continue
+                seen.add(token)
+                candidates.append(token)
+
+        for question in lesson.quiz_questions:
+            if not self._question_targets_verbbank_entry(question):
+                continue
+            add_tokens(question.correct_answer)
+            for phrase in self._extract_quoted_text(question.explanation):
+                add_tokens(phrase)
+        return tuple(candidates)
+
+    def _question_targets_verbbank_entry(self, question: Question) -> bool:
+        explanation = question.explanation.casefold()
+        prompt = question.prompt.casefold()
+        tags = {tag.casefold() for tag in question.tags}
+        if any("verb" in tag or "tense" in tag or tag.startswith("a_") for tag in tags):
+            return True
+        return (
+            "form of" in explanation
+            or "verb" in explanation
+            or "conjug" in explanation
+            or "form of" in prompt
+            or "verb" in prompt
+        )
 
     def _maybe_upsert_verbbank_entry(self, *, user_id: str, token: str, topic_id: str) -> None:
         """If the token appears to be a verb, ask AI for conjugations and persist a verbbank entry.

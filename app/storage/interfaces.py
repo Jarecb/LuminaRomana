@@ -75,7 +75,14 @@ class WordbankRepository(Protocol):
 
     def delete_for_user(self, user_id: str) -> None: ...
 
-    def update_definition(self, user_id: str, word: str, definition: str) -> None: ...
+    def update_definition(
+        self,
+        user_id: str,
+        word: str,
+        definition: str,
+        *,
+        example_usage: str | None = None,
+    ) -> None: ...
 
 
 class VerbbankRepository(Protocol):

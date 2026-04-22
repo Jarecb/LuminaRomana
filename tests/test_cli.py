@@ -218,6 +218,35 @@ def test_serve_offline_flag_starts_server_in_offline_only_mode(monkeypatch, tmp_
     }
 
 
+def test_serve_seed_flag_populates_bank_before_server_start(capsys, monkeypatch, tmp_path):
+    monkeypatch.setenv("LUMINA_ROMANA_ENV", "test")
+    monkeypatch.setenv("LUMINA_ROMANA_DATA_DIR", str(tmp_path / "data"))
+
+    captured = {}
+
+    def fake_run_dev_server(app):
+        captured["romanian_basics_count"] = app.persistence.offline_questions.count_for_topic("romanian_basics")
+
+    monkeypatch.setattr("app.cli.run_dev_server", fake_run_dev_server)
+
+    exit_code = main(
+        [
+            "serve",
+            "--seed-offline-questions",
+            "--seed-topics",
+            "romanian_basics",
+            "--seed-question-count",
+            "10",
+        ]
+    )
+    captured_output = capsys.readouterr()
+
+    assert exit_code == 0
+    assert "Seeding offline question bank before starting web server." in captured_output.out
+    assert "Lumina Romana offline question bank seed" in captured_output.out
+    assert captured["romanian_basics_count"] >= 1
+
+
 def test_top_level_offline_flag_defaults_to_serve(monkeypatch, tmp_path):
     monkeypatch.setenv("LUMINA_ROMANA_ENV", "test")
     monkeypatch.setenv("LUMINA_ROMANA_DATA_DIR", str(tmp_path / "data"))

@@ -285,7 +285,7 @@ class WebApp:
     def _render_wordbank(self, query: str) -> str:
         wordbank = self.learning_service.build_wordbank(DEFAULT_USER_ID, query=query)
         entries_html = "".join(
-            f"<li><strong>{escape(entry.word)}</strong><span>{escape(entry.definition)}</span><em>{escape(entry.topic.replace('_', ' '))}</em></li>"
+            self._render_wordbank_entry(entry)
             for entry in wordbank.entries
         ) or "<li>No matching wordbank entries yet.</li>"
         return self._page(
@@ -337,6 +337,13 @@ class WebApp:
             </section>
             """,
         )
+
+    def _render_wordbank_entry(self, entry) -> str:
+        lines = [f"<span class='translation'>{escape(entry.definition)}</span>"]
+        if entry.example_usage.strip():
+            lines.append(f"<span class='example-usage'>Example: {escape(entry.example_usage.strip())}</span>")
+        lines.append(f"<em>{escape(entry.topic.replace('_', ' '))}</em>")
+        return f"<li><strong>{escape(entry.word)}</strong>{''.join(lines)}</li>"
 
     def _render_verbbank_entry(self, entry) -> str:
         details = self._parse_verbbank_details(entry.conjugations)

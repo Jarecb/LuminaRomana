@@ -253,6 +253,7 @@ class SQLiteStorage:
                     user_id TEXT NOT NULL,
                     word TEXT NOT NULL,
                     definition TEXT NOT NULL,
+                    example_usage TEXT NOT NULL DEFAULT '',
                     topic TEXT NOT NULL,
                     first_seen_at TEXT NOT NULL,
                     PRIMARY KEY (user_id, word),
@@ -290,6 +291,7 @@ class SQLiteStorage:
                 );
                 """
             )
+            self._ensure_column(conn, "wordbank", "example_usage", "TEXT NOT NULL DEFAULT ''")
             self._ensure_column(conn, "verbbank", "translation", "TEXT NOT NULL DEFAULT ''")
 
     def _ensure_column(self, conn: sqlite3.Connection, table_name: str, column_name: str, column_sql: str) -> None:
@@ -714,10 +716,11 @@ class SQLiteWordbankRepository:
         with self.storage.connection() as conn:
             conn.execute(
                 """
-                INSERT INTO wordbank (user_id, word, definition, topic, first_seen_at)
-                VALUES (?, ?, ?, ?, ?)
+                INSERT INTO wordbank (user_id, word, definition, example_usage, topic, first_seen_at)
+                VALUES (?, ?, ?, ?, ?, ?)
                 ON CONFLICT(user_id, word) DO UPDATE SET
                     definition = excluded.definition,
+                    example_usage = excluded.example_usage,
                     topic = excluded.topic,
                     first_seen_at = excluded.first_seen_at
                 """,
@@ -725,21 +728,29 @@ class SQLiteWordbankRepository:
                     entry.user_id,
                     entry.word,
                     entry.definition,
+                    entry.example_usage,
                     entry.topic,
                     _serialize_datetime(entry.first_seen_at),
                 ),
             )
 
-    def update_definition(self, user_id: str, word: str, definition: str) -> None:
+    def update_definition(
+        self,
+        user_id: str,
+        word: str,
+        definition: str,
+        *,
+        example_usage: str | None = None,
+    ) -> None:
         """Update the definition for an existing wordbank entry for the user."""
         with self.storage.connection() as conn:
             conn.execute(
                 """
                 UPDATE wordbank
-                SET definition = ?, first_seen_at = ?
+                SET definition = ?, example_usage = COALESCE(?, example_usage), first_seen_at = ?
                 WHERE user_id = ? AND word = ?
                 """,
-                (definition, _serialize_datetime(datetime.now()), user_id, word),
+                (definition, example_usage, _serialize_datetime(datetime.now()), user_id, word),
             )
 
     def search_for_user(self, user_id: str, query: str = "", limit: int = 100) -> list[WordbankEntry]:
@@ -748,8 +759,8 @@ class SQLiteWordbankRepository:
                 raw = query.strip().lower()
                 pattern = f"%{raw}%"
 
-                # Build a folded (ASCII) form of lower(word)/definition for diacritic-insensitive matching
-                # Using nested REPLACE calls so SQLite can compare folded forms without changing schema.
+                  # Build a folded (ASCII) form of lower(word)/definition/example_usage for diacritic-insensitive matching
+                  # Using nested REPLACE calls so SQLite can compare folded forms without changing schema.
                 def folded_expr(col_name: str) -> str:
                     expr = f"lower({col_name})"
                     replacements = [
@@ -767,18 +778,31 @@ class SQLiteWordbankRepository:
                 folded_pattern = f"%{folded_pattern}%"
 
                 sql = f"""
-                    SELECT *
-                    FROM wordbank
-                    WHERE user_id = ?
-                      AND (
-                        lower(word) LIKE ? OR lower(definition) LIKE ? OR lower(topic) LIKE ?
-                        OR {folded_expr('word')} LIKE ? OR {folded_expr('definition')} LIKE ?
-                      )
-                    ORDER BY word ASC
-                    LIMIT ?
-                    """
+                      SELECT *
+                      FROM wordbank
+                      WHERE user_id = ?
+                        AND (
+                          lower(word) LIKE ? OR lower(definition) LIKE ? OR lower(example_usage) LIKE ? OR lower(topic) LIKE ?
+                          OR {folded_expr('word')} LIKE ? OR {folded_expr('definition')} LIKE ? OR {folded_expr('example_usage')} LIKE ?
+                        )
+                      ORDER BY word ASC
+                      LIMIT ?
+                      """
 
-                rows = conn.execute(sql, (user_id, pattern, pattern, pattern, folded_pattern, folded_pattern, limit)).fetchall()
+                rows = conn.execute(
+                    sql,
+                    (
+                        user_id,
+                        pattern,
+                        pattern,
+                        pattern,
+                        pattern,
+                        folded_pattern,
+                        folded_pattern,
+                        folded_pattern,
+                        limit,
+                    ),
+                ).fetchall()
             else:
                 rows = conn.execute(
                     """
@@ -791,15 +815,16 @@ class SQLiteWordbankRepository:
                     (user_id, limit),
                 ).fetchall()
         return [
-            WordbankEntry(
-                user_id=row["user_id"],
-                word=row["word"],
-                definition=row["definition"],
-                topic=row["topic"],
-                first_seen_at=_deserialize_datetime(row["first_seen_at"]) or datetime.now(),
-            )
-            for row in rows
-        ]
+                WordbankEntry(
+                    user_id=row["user_id"],
+                    word=row["word"],
+                    definition=row["definition"],
+                    topic=row["topic"],
+                    example_usage=(row["example_usage"] if "example_usage" in row.keys() else ""),
+                    first_seen_at=_deserialize_datetime(row["first_seen_at"]) or datetime.now(),
+                )
+                for row in rows
+            ]
 
     def delete_for_user(self, user_id: str) -> None:
         with self.storage.connection() as conn:

@@ -113,6 +113,8 @@ If you want CLI commands to use the AI settings from `run_server.bat`, run them 
 .\run_server.bat seed-offline-questions --topics romanian_basics --question-count 100
 ```
 
+With no arguments, menu option `[3]` now seeds the archived offline question bank during startup and only then opens the browser server.
+
 ### CLI
 The CLI is mainly for diagnostics, testing, and offline-content maintenance. Use `python main.py ...` for generic local commands, or `.\run_server.bat ...` when you want the AI settings defined in `run_server.bat` to apply to the same process.
 
@@ -336,7 +338,7 @@ See `docs/DEPLOYMENT.md` for the full local, wheel, and container deployment flo
 
 ## Recent changes (Apr 2026)
 
-- run_server.bat: added an interactive startup menu that includes an explicit "Seed offline question bank (AI-assisted)" option (choose [3]) and still accepts direct CLI args (e.g. .\run_server.bat seed-offline-questions). The script no longer contains a hard-coded API key; set LUMINA_ROMANA_AI_API_KEY in your environment instead. The batch file also echoes the configured API key at startup with a warning — avoid sharing logs. Consider masking it if needed.
+- run_server.bat: added an interactive startup menu that includes an explicit startup-seeding option (choose [3]) and still accepts direct CLI args (e.g. .\run_server.bat seed-offline-questions). Option [3] now completes seeding during server startup before the web UI becomes available. The script no longer contains a hard-coded API key; set LUMINA_ROMANA_AI_API_KEY in your environment instead. The batch file also echoes the configured API key at startup with a warning - avoid sharing logs. Consider masking it if needed.
 
 - Wordbank improvements: example-sentence tokens are now normalized for Unicode and common typographic punctuation; search is diacritic-insensitive (so "gradina" matches "grădină"). The app will prefer concise translations when available: lesson glosses are extracted from explanations and, when AI is enabled, the AIService can request concise English glosses and update wordbank entries automatically.
 

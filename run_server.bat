@@ -25,9 +25,11 @@ if exist ".venv\Scripts\python.exe" (
 set "LUMINA_COMMAND=%*"
 set "LUMINA_HAS_ARGS=true"
 set "LUMINA_INTERACTIVE_MENU_CHOICE="
+set "LUMINA_PRIMARY_COMMAND=%~1"
 if "%LUMINA_COMMAND%"=="" (
     set "LUMINA_COMMAND=serve"
     set "LUMINA_HAS_ARGS=false"
+    set "LUMINA_PRIMARY_COMMAND=serve"
 )
 
 rem Check if offline was already passed via command line arguments
@@ -45,7 +47,7 @@ if /I "%LUMINA_HAS_ARGS%"=="false" if /I "%LUMINA_ROMANA_AI_OFFLINE_ONLY%"=="fal
     echo  Select Execution Mode:
     echo  [1] Online - AI Enabled
     echo  [2] Offline - Local Only
-    echo  [3] Seed offline question bank - AI-assisted
+    echo  [3] Seed offline question bank, then start server
     echo ========================================
     choice /c 123 /n /m "Enter your choice (1, 2 or 3): "
 
@@ -53,13 +55,16 @@ if /I "%LUMINA_HAS_ARGS%"=="false" if /I "%LUMINA_ROMANA_AI_OFFLINE_ONLY%"=="fal
     set "USER_CHOICE=%ERRORLEVEL%"
     set "LUMINA_INTERACTIVE_MENU_CHOICE=%USER_CHOICE%"
     if "%USER_CHOICE%"=="3" (
-        set "LUMINA_COMMAND=seed-offline-questions"
+        set "LUMINA_COMMAND=serve --seed-offline-questions"
+        set "LUMINA_PRIMARY_COMMAND=serve"
     ) else (
         if "%USER_CHOICE%"=="2" (
             set "LUMINA_ROMANA_AI_OFFLINE_ONLY=true"
             set "LUMINA_COMMAND=serve"
+            set "LUMINA_PRIMARY_COMMAND=serve"
         ) else (
             set "LUMINA_COMMAND=serve"
+            set "LUMINA_PRIMARY_COMMAND=serve"
         )
     )
 )
@@ -74,6 +79,9 @@ if /I not "%LUMINA_ROMANA_AI_OFFLINE_ONLY%"=="true" if /I "%LUMINA_ROMANA_AI_ENA
 set "LUMINA_MODE_LABEL=ai-enabled-or-fallback"
 if /I "%LUMINA_ROMANA_AI_OFFLINE_ONLY%"=="true" (
     set "LUMINA_MODE_LABEL=offline-only"
+)
+if "%LUMINA_INTERACTIVE_MENU_CHOICE%"=="3" (
+    set "LUMINA_MODE_LABEL=ai-seeding-before-startup"
 )
 
 echo.
@@ -90,7 +98,7 @@ echo.
 rem echo NOTE: API key is displayed above. Avoid exposing this output in logs or shared terminals.
 
 if "%LUMINA_INTERACTIVE_MENU_CHOICE%"=="3" (
-    echo Seeding the offline question bank. Review the summary below when it completes.
+    echo Seeding the offline question bank before the server starts. Review the summary below during startup.
     echo.
 )
 
@@ -102,7 +110,7 @@ if not "%EXIT_CODE%"=="0" (
     pause
 )
 
-if "%EXIT_CODE%"=="0" if /I "%LUMINA_HAS_ARGS%"=="false" if /I not "%LUMINA_COMMAND%"=="serve" (
+if "%EXIT_CODE%"=="0" if /I "%LUMINA_HAS_ARGS%"=="false" if /I not "%LUMINA_PRIMARY_COMMAND%"=="serve" (
     echo.
     echo Command completed successfully. Review the output above.
     pause
