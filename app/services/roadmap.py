@@ -22,24 +22,8 @@ if TYPE_CHECKING:
     from app.storage import OfflineQuestionRepository
 
 
-@dataclass(frozen=True, slots=True)
-class FallbackQuestionTemplate:
-    prompt: str
-    question_type: QuestionType
-    correct_answer: str
-    explanation: str
-    tags: tuple[str, ...]
-    options: tuple[str, ...] = ()
-    hint: str | None = None
-    rubric: dict[str, str] | None = None
+from app.services.roadmap_types import FallbackQuestionTemplate, FallbackLessonTemplate
 
-
-@dataclass(frozen=True, slots=True)
-class FallbackLessonTemplate:
-    explanation_text: str
-    key_rules: tuple[str, ...]
-    example_sentences: tuple[ExampleSentence, ...]
-    questions: tuple[FallbackQuestionTemplate, ...]
 
 
 FALLBACK_LESSON_TEMPLATES: dict[str, FallbackLessonTemplate] = {

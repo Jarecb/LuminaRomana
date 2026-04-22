@@ -28,24 +28,8 @@ from app.storage.interfaces import OfflineQuestionRepository
 from app.validation import ContentValidationError, ContentValidator, lesson_to_payload
 
 
-@dataclass(frozen=True, slots=True)
-class AIServiceMetricsSnapshot:
-    total_requests: int
-    successful_generations: int
-    fallback_generations: int
-    validation_failures: int
-    retries_attempted: int
-    transient_failures: int
-    provider_failures: int
-    json_parse_failures: int
+from app.ai.metrics import AIServiceMetricsSnapshot, TEXT_LIMITS
 
-
-TEXT_LIMITS = {
-    "explanation_text": 800,
-    "example_sentence": 180,
-    "question_prompt": 320,
-    "question_explanation": 500,
-}
 
 
 class AIService:
