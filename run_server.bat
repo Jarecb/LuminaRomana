@@ -15,7 +15,7 @@ set "LUMINA_ROMANA_AI_ENABLED=true"
 set "LUMINA_ROMANA_AI_PROVIDER=gemini"
 set "LUMINA_ROMANA_AI_MODEL=gemini-2.5-flash"
 rem Do NOT hardcode API keys in this file. Set LUMINA_ROMANA_AI_API_KEY in your environment instead.
-set "LUMINA_ROMANA_AI_API_KEY=AIzaSyC2mCeluucZqb1JtEV0rpVeZD36XjCpv88"
+set "LUMINA_ROMANA_AI_API_KEY="
 
 set "PYTHON_EXE=python"
 if exist ".venv\Scripts\python.exe" (
